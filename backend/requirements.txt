@@ -9,10 +9,7 @@ django-cors-headers==4.3.1
 boto3
 django-storages
 python-decouple
-<<<<<<< HEAD
-=======
 boto3
 dj-database-url
->>>>>>> e887131 (Actualización settings.py y requirements.txt con soporte WhiteNoise y S3 Spaces)
 whitenoise
 
