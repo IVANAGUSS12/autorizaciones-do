@@ -9,15 +9,16 @@ urlpatterns = [
     path("admin/", admin.site.urls),
     path("v1/", include("core.urls")),
 
-    # Panel principal y QR
+    # Fronts
     path("", RedirectView.as_view(url="/static/panel/index.html", permanent=False)),
     path("static/qr/", RedirectView.as_view(url="/static/qr/index.html", permanent=False)),
 ]
 
-# --- Servir archivos MEDIA (producción + local) ---
+# Servir MEDIA también en producción (App Platform no pone Nginx)
 urlpatterns += [
     re_path(r"^media/(?P<path>.*)$", static_serve, {"document_root": settings.MEDIA_ROOT}),
 ]
 
+# Y en desarrollo
 if settings.DEBUG:
     urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
