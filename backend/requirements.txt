@@ -9,4 +9,5 @@ django-cors-headers==4.3.1
 boto3
 django-storages
 python-decouple
+whitenoise
 
