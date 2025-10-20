@@ -1,23 +1,18 @@
 import os
 from pathlib import Path
+from decouple import config
 import dj_database_url
 
+# BASE DIR
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-# -------- Core --------
-SECRET_KEY = os.getenv("DJANGO_SECRET_KEY", "dev-secret-key")
-DEBUG = os.getenv("DEBUG", "false").lower() in ("1","true","yes","on")
-ALLOWED_HOSTS = [h for h in os.getenv("ALLOWED_HOSTS", "*").split(",") if h]
+# SECURITY
+SECRET_KEY = config("DJANGO_SECRET_KEY", default="changeme")
+DEBUG = config("DEBUG", default=False, cast=bool)
 
-# Dominios confiables para CSRF (admin/QR/panel)
-CSRF_TRUSTED_ORIGINS = [o for o in os.getenv("CSRF_TRUSTED_ORIGINS","").split(",") if o]
+ALLOWED_HOSTS = ["*", "starfish-app-putz9.ondigitalocean.app"]
 
-LANGUAGE_CODE = "es-ar"
-TIME_ZONE = "America/Argentina/Buenos_Aires"
-USE_I18N = True
-USE_TZ = True
-
-# -------- Apps --------
+# APLICACIONES
 INSTALLED_APPS = [
     "django.contrib.admin",
     "django.contrib.auth",
@@ -26,16 +21,13 @@ INSTALLED_APPS = [
     "django.contrib.messages",
     "django.contrib.staticfiles",
     "rest_framework",
-    "corsheaders",
     "core",
+    "storages",
 ]
 
-# -------- Middleware --------
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
-    "whitenoise.middleware.WhiteNoiseMiddleware",   # ESTÁTICOS EN PROD
     "django.contrib.sessions.middleware.SessionMiddleware",
-    "corsheaders.middleware.CorsMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
@@ -48,7 +40,7 @@ ROOT_URLCONF = "autorizaciones.urls"
 TEMPLATES = [
     {
         "BACKEND": "django.template.backends.django.DjangoTemplates",
-        "DIRS": [],
+        "DIRS": [BASE_DIR / "templates"],
         "APP_DIRS": True,
         "OPTIONS": {
             "context_processors": [
@@ -63,45 +55,51 @@ TEMPLATES = [
 
 WSGI_APPLICATION = "autorizaciones.wsgi.application"
 
-# -------- Base de datos (SOLO DATABASE_URL) --------
-if os.getenv("DATABASE_URL"):
-    DATABASES = {"default": dj_database_url.config(conn_max_age=600, ssl_require=True)}
-else:
-    DATABASES = {
-        "default": {
-            "ENGINE": "django.db.backends.sqlite3",
-            "NAME": BASE_DIR / "db.sqlite3",
-        }
-    }
-
-# -------- Static & Media --------
-STATIC_URL = "/static/"
-STATIC_ROOT = BASE_DIR / "staticfiles"
-STATICFILES_DIRS = [BASE_DIR / "static"]
-
-# Donde guardamos adjuntos. En DO: montar volumen en /app/media
-MEDIA_URL = "/media/"
-MEDIA_ROOT = Path(os.getenv("MEDIA_ROOT", "/app/media"))
-
-# WhiteNoise (formato Django 4+/5 con STORAGES)
-STORAGES = {
-    "staticfiles": {"BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage"},
-    "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
+# BASE DE DATOS
+DATABASES = {
+    "default": dj_database_url.config(
+        default=config("DATABASE_URL"),
+        conn_max_age=600,
+        ssl_require=True,
+    )
 }
 
-# -------- CORS/CSRF/Security --------
-CORS_ALLOW_ALL_ORIGINS = True
-X_FRAME_OPTIONS = "SAMEORIGIN"                  # para vista previa PDF en modal
-SESSION_COOKIE_SECURE = True
-CSRF_COOKIE_SECURE = True
-SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+# PASSWORDS
+AUTH_PASSWORD_VALIDATORS = [
+    {"NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"},
+    {"NAME": "django.contrib.auth.password_validation.MinimumLengthValidator"},
+    {"NAME": "django.contrib.auth.password_validation.CommonPasswordValidator"},
+    {"NAME": "django.contrib.auth.password_validation.NumericPasswordValidator"},
+]
 
-# -------- DRF (API pública) --------
+# INTERNACIONALIZACIÓN
+LANGUAGE_CODE = "es-ar"
+TIME_ZONE = "America/Argentina/Buenos_Aires"
+USE_I18N = True
+USE_TZ = True
+
+# STATIC & MEDIA usando DigitalOcean Spaces
+AWS_ACCESS_KEY_ID = config("SPACES_KEY", default="")
+AWS_SECRET_ACCESS_KEY = config("SPACES_SECRET", default="")
+AWS_STORAGE_BUCKET_NAME = config("SPACES_NAME", default="autorizaciones-media")
+AWS_S3_REGION_NAME = config("SPACES_REGION", default="sfo3")
+AWS_S3_ENDPOINT_URL = f"https://{AWS_S3_REGION_NAME}.digitaloceanspaces.com"
+
+DEFAULT_FILE_STORAGE = "storages.backends.s3boto3.S3Boto3Storage"
+STATICFILES_STORAGE = "storages.backends.s3boto3.S3Boto3Storage"
+
+STATIC_URL = f"{AWS_S3_ENDPOINT_URL}/{AWS_STORAGE_BUCKET_NAME}/static/"
+MEDIA_URL = f"{AWS_S3_ENDPOINT_URL}/{AWS_STORAGE_BUCKET_NAME}/media/"
+
+STATIC_ROOT = BASE_DIR / "staticfiles"
+MEDIA_ROOT = BASE_DIR / "mediafiles"
+
+# CSRF
+CSRF_TRUSTED_ORIGINS = ["https://starfish-app-putz9.ondigitalocean.app"]
+
+# REST FRAMEWORK
 REST_FRAMEWORK = {
-    "DEFAULT_PERMISSION_CLASSES": ["rest_framework.permissions.AllowAny"],
-    "DEFAULT_AUTHENTICATION_CLASSES": [],
-    "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
-    "PAGE_SIZE": int(os.getenv("API_PAGE_SIZE", "50")),
+    "DEFAULT_PERMISSION_CLASSES": ["rest_framework.permissions.AllowAny"]
 }
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
