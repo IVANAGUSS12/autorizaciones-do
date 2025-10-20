@@ -89,3 +89,5 @@ REST_FRAMEWORK = {
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
+# Permitir iframes desde el mismo dominio (para la vista previa en <iframe>)
+X_FRAME_OPTIONS = "SAMEORIGIN"
