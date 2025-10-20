@@ -25,7 +25,6 @@ INSTALLED_APPS = [
 
     # Internas
     "core",
-    "api",
 ]
 
 # === Middlewares ===
