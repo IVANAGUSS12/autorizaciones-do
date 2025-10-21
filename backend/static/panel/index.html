@@ -196,7 +196,7 @@ function applyGrid(){
 }
 document.getElementById('btnLeft').onclick = ()=>{ leftOpen=!leftOpen; applyGrid(); };
 
-const list = $('#list'); const totalEl = $('#total'); const rangeEl = $('#range'];
+const list = $('#list'); const totalEl = $('#total'); const rangeEl = $('#range');
 let page=1, pageSize=50, lastCount=0, currentMonth=new Date();
 let anchorId=null; // resaltar fila desde calendario
 let cachedAll=[];  // dataset para filtros/estadísticas
@@ -211,8 +211,8 @@ const API = {
     if (params.cobertura)    q.set('cobertura', params.cobertura);
     if (params.estado)       q.set('estado',    params.estado);
     if (params.medico)       q.set('medico',    params.medico);
-    if (params.sector)       q.set('sector',    params.sector);
-    if (params.sector__code) q.set('sector__code', params.sector__code);
+    if (params.sector)       q.set('sector',    params.sector);          // si usás ID
+    if (params.sector__code) q.set('sector__code', params.sector__code); // si usás code
     return `/v1/patients/?${q.toString()}`;
   }
 };
@@ -328,7 +328,7 @@ function buildServerParamsFromUI(){
     cobertura: $('#cov').value || '',
     estado:    $('#est').value || '',
     medico:    $('#med').value || '',
-    sector__code: $('#sec').value || ''
+    sector__code: $('#sec').value || '' // si tu UI usa ID, cambia por 'sector'
   };
 }
 function textMatch(hay, needle){ if(!needle) return true; const s=(hay||'').toString().toLowerCase(); const n=needle.toLowerCase(); return s.includes(n); }
@@ -416,31 +416,46 @@ async function loadRowAttachments(id){
   const card = document.querySelector(`#attach-${id}`);
   const data = await fetchJsonSafe(`/v1/patients/${id}/`);
   const p = data || {};
-  // ⬇️ preferimos key → /v1/media-signed/<key>
-  const files = (p.attachments||[])
-    .map(a=>{
-      const name = a.name || (a.kind||'archivo').toUpperCase();
-      const signed = a.key ? `/v1/media-signed/${encodeURIComponent(a.key)}` : (a.external_url || a.url || a.file);
-      return { name, url: signed };
-    })
-    .filter(f=>f.url);
+  const raw = Array.isArray(p.attachments) ? p.attachments : [];
+  const files = raw.map(a => {
+    // Intentamos derivar la key interna del objeto (preferida) o la url directa
+    const key = a.key || (a.file && a.file.name) || null;
+    const direct = a.url || (a.file && (a.file.url || a.file)) || null;
+    const url = key ? `/v1/media-signed/${encodeURIComponent(key)}` : direct;
+    return {
+      kind: (a.kind || a.tipo || a.category || 'archivo'),
+      name: a.name || a.nombre || (a.kind || 'archivo').toUpperCase(),
+      url
+    };
+  }).filter(f => !!f.url);
 
-  if(!files.length){
+  if (!files.length){
     card.innerHTML = `<div class="text-sm text-gray-500">Sin adjuntos</div>`;
     return;
   }
 
-  card.innerHTML = `
-    <div class="grid md:grid-cols-2 gap-3">
-      ${files.map(f=>`
-        <div class="p-3 border rounded-md flex items-center justify-between gap-3">
-          <div class="text-sm font-medium">${f.name}</div>
-          <div class="flex gap-2">
-            <button class="px-2 py-1 border rounded-md" onclick="preview('${encodeURI(f.url)}','${f.name.replace(/'/g,"\\'")}')">Vista previa</button>
-            <a class="px-2 py-1 border rounded-md" target="_blank" href="${encodeURI(f.url)}">Descargar</a>
-          </div>
-        </div>`).join('')}
-    </div>`;
+  const html = `<div class="grid md:grid-cols-2 gap-3">` + files.map(f => `
+    <div class="border rounded-md overflow-hidden bg-white">
+      <div class="px-3 py-2 flex items-center justify-between gap-3">
+        <div class="text-sm font-medium">${f.name || ''}</div>
+        <div class="text-xs px-2 py-1 rounded bg-gray-100 border">${(f.kind||'').toUpperCase()}</div>
+      </div>
+      <div class="p-0">
+        <iframe src="${encodeURI(f.url)}" loading="lazy" style="width:100%;height:320px;border:0;"></iframe>
+      </div>
+      <div class="px-3 py-2 flex items-center justify-end">
+        <a class="btn btn-sm" target="_blank" href="${encodeURI(f.url)}">Descargar</a>
+      </div>
+    </div>`).join('') + `</div>`;
+
+  card.innerHTML = html;
+}
+`);
+  const data = await fetchJsonSafe(`/v1/patients/${id}/`);
+  const p = data || {};
+  const files = (p.attachments||[]).map(a=>({ kind:(a.kind||a.tipo||a.category||'archivo').toUpperCase(), url: a.external_url || a.url || a.file, name:a.name || (a.kind||'archivo').toUpperCase() })).filter(f=>f.url);
+  if(!files.length){ card.innerHTML = `<div class="text-sm text-gray-500">Sin adjuntos</div>`; return; }
+  card.innerHTML = `<div class="grid md:grid-cols-2 gap-3">${files.map(f=>`<div class="p-3 border rounded-md flex items-center justify-between gap-3"><div class="text-sm font-medium">${f.name}</div><div class="flex gap-2"><button class="px-2 py-1 border rounded-md" onclick="preview('${encodeURI(f.url)}','${f.name.replace(/'/g,"\\'")}')">Vista previa</button><a class="px-2 py-1 border rounded-md" target="_blank" href="${encodeURI(f.url)}">Descargar</a></div></div>`).join('')}</div>`;
 }
 async function uploadAtt(id){
   const kindSel = document.getElementById(`att-kind-${id}`); const fileInp = document.getElementById(`att-file-${id}`);
@@ -461,8 +476,11 @@ async function saveRow(id){
 /* ========= Preview ========= */
 async function preview(url, title='Vista previa'){
   $('#modalTitle').textContent = title; const body = $('#modalBody'); body.innerHTML='';
-  // Con URLs firmadas no necesitamos autenticación ni blob local
-  renderPreview(url);
+  try{
+    const needsAuth = !/^https?:\/\//.test(url) || url.includes('/media/');
+    if(needsAuth){ const r = await fetch(url, {credentials:'include'}); if(!r.ok) throw 0; const blob=await r.blob(); const obj=URL.createObjectURL(blob); renderPreview(obj); }
+    else renderPreview(url);
+  }catch(e){ renderPreview(url); }
   $('#modal').classList.add('open');
 }
 function renderPreview(u){
@@ -477,6 +495,7 @@ $('#modal').addEventListener('click', e=>{ if(e.target.id==='modal') $('#modal')
 /* ========= Calendario ========= */
 const ws = document.getElementById('workspace'); const wsBody=document.getElementById('wsBody'); const wsHint=document.getElementById('wsHint');
 
+/* NUEVO: nombres de días y etiqueta de mes/año */
 const WEEKDAYS = ['Lun','Mar','Mié','Jue','Vie','Sáb','Dom'];
 function monthLabel(d){ const MES=['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']; return `${MES[d.getMonth()]} ${d.getFullYear()}`; }
 
@@ -500,4 +519,277 @@ function renderCalendarPage(){
       <div id="calPeriod" class="text-xl text-emerald-800 font-semibold"></div>
     </div>
     <div class="flex items-center gap-2">
-      <select id="calSector" class="pill"><option value="">Sector (todos
+      <select id="calSector" class="pill"><option value="">Sector (todos)</option><option value="trauma">Traumatología</option><option value="hemo">Hemodinamia</option></select>
+      <button id="calToday" class="btn">Hoy</button>
+      <button id="calPrev"  class="btn">◀</button>
+      <button id="calNext"  class="btn">▶</button>
+    </div>
+  </div>
+
+  <!-- Cabecera de días -->
+  <div class="grid grid-cols-7 gap-3 text-xs text-gray-500 mb-2">
+    ${WEEKDAYS.map(d=>`<div class="px-2 py-1 text-center">${d}</div>`).join('')}
+  </div>
+
+  <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+    <div class="lg:col-span-2"><div id="bigCal" class="calendar-grid"></div></div>
+    <div><div class="card p-3"><div class="text-sm font-semibold mb-2">Turnos del día <span id="selDay">—</span></div><div id="dayList" class="space-y-2 max-h-[72vh] overflow-auto"></div></div></div>
+  </div>`;
+  $('#calToday').onclick = ()=>{ calMonth=new Date(); drawBigCalendar(); };
+  $('#calPrev').onclick  = ()=>{ calMonth=new Date(calMonth.getFullYear(), calMonth.getMonth()-1, 1); drawBigCalendar(); };
+  $('#calNext').onclick  = ()=>{ calMonth=new Date(calMonth.getFullYear(), calMonth.getMonth()+1, 1); drawBigCalendar(); };
+  drawBigCalendar();
+}
+function renderMiniCalendar(date, rows){
+  const box = document.getElementById('miniCalendar'); if(!box) return; box.innerHTML='';
+  const days = monthMatrix(date); const map={};
+  (rows||[]).forEach(p=>{ const d=surgeryDate(p); if(!d) return; map[d]=(map[d]||0)+1; });
+  days.forEach(d=>{
+    const el=document.createElement('div'); el.className='mini-day';
+    if(!d){ el.style.visibility='hidden'; box.appendChild(el); return; }
+    const key=d.toISOString().slice(0,10); const cnt=map[key]||0;
+    el.innerHTML = `<div class="text-xs text-gray-500 flex justify-between"><span>${d.getDate()}</span><span>${cnt? cnt+'🗓':''}</span></div>`;
+    el.onclick=()=>{ document.getElementById('fx1').value=key; document.getElementById('fx2').value=key; page=1; load(); };
+    box.appendChild(el);
+  });
+}
+async function drawBigCalendar(){
+  wsHint.textContent='Clickeá un día para ver sus turnos.';
+  const per = document.getElementById('calPeriod'); if (per) per.textContent = monthLabel(calMonth);
+
+  const {start,end}=monthBounds(calMonth);
+  const rows = cachedAll.filter(p =>
+    inRange(surgeryDate(p), start, end) &&
+    (!$('#calSector').value || sectorMatchesFilter(p, $('#calSector').value))
+  );
+  const big=document.getElementById('bigCal'); big.innerHTML='';
+  const days=monthMatrix(calMonth); const map={};
+  rows.forEach(p=>{ const k=surgeryDate(p); if(k) (map[k]||(map[k]=[])).push(p); });
+  days.forEach(d=>{
+    const cell=document.createElement('div'); cell.className='calendar-day';
+    if(!d){ cell.style.visibility='hidden'; big.appendChild(cell); return; }
+    const k=d.toISOString().slice(0,10); const items=map[k]||[];
+    const wd = WEEKDAYS[(d.getDay()+6)%7]; // lunes=0
+    cell.innerHTML = `<div class="flex items-center justify-between">
+        <div class="text-sm font-medium text-gray-700">${d.getDate()} <span class="text-xs text-gray-400">(${wd})</span></div>
+        <div class="text-xs text-gray-500">${items.length} turno(s)</div>
+      </div>
+      <div class="mt-1">
+        ${items.slice(0,6).map(p=>{
+          const code = sectorCodeSafe(p);
+          return `<div class="item ${code==='hemo'?'it-hemo':'it-trauma'}">${(pickStr(p,FMAP.name)||'pte')}</div>`;
+        }).join('')}
+      </div>`;
+    cell.onclick=()=> showDayList(k, items);
+    big.appendChild(cell);
+  });
+  const todayKey=new Date().toISOString().slice(0,10);
+  if(map[todayKey]) showDayList(todayKey,map[todayKey]);
+  else { $('#selDay').textContent='—'; $('#dayList').innerHTML='<div class="text-sm text-gray-500">Elegí un día</div>'; }
+}
+function showDayList(key, items){
+  $('#selDay').textContent = key.split('-').reverse().join('/');
+  const box=$('#dayList'); if(!items.length){ box.innerHTML='<div class="text-sm text-gray-500">Sin turnos</div>'; return; }
+  box.innerHTML = items.map((p)=>{
+    const pid=pick(p,FMAP.id);
+    return `<div class="p-2 border rounded-md bg-white flex items-center justify-between">
+      <div><div class="font-medium">${pickStr(p,FMAP.name)||'-'}</div><div class="text-xs text-gray-500">${pickStr(p,FMAP.coverage)||''} · ${pickStr(p,FMAP.doctor)||''}</div></div>
+      <div class="flex items-center gap-2">
+        <button class="px-2 py-1 border rounded-md"
+          onclick="document.getElementById('fx1').value='${key}';document.getElementById('fx2').value='${key}';document.getElementById('workspace').classList.remove('open');window.anchorId='${pid}';page=1;load();">Ver en tabla</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+/* ========= Estadísticas (pro) ========= */
+function groupCount(rows, keyFn){ const map = new Map(); for (const r of rows){ const k = keyFn(r); if (!k) continue; map.set(k, (map.get(k) || 0) + 1); } return map; }
+function formatMonth(iso){ return iso ? iso.slice(0,7) : ''; }
+function formatWeek(iso){
+  if (!iso) return '';
+  const d = new Date(iso);
+  const dt = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+  const dayNum = (dt.getUTCDay() + 6) % 7;
+  dt.setUTCDate(dt.getUTCDate() - dayNum + 3);
+  const firstThursday = new Date(Date.UTC(dt.getUTCFullYear(),0,4));
+  const week = 1 + Math.round(((dt - firstThursday)/86400000 - 3 + (firstThursday.getUTCDay()+6)%7)/7);
+  return `${dt.getUTCFullYear()}-W${String(week).padStart(2,'0')}`;
+}
+function cumulate(arr){ let s = 0; return arr.map(v => (s += v)); }
+
+function renderStatsPage(){
+  wsBody.innerHTML = `
+  <div class="flex items-center justify-between mb-3">
+    <div class="text-xl font-semibold">Estadísticas</div>
+    <div class="flex items-center gap-2 text-sm text-gray-600">Toman los filtros del panel + estos propios</div>
+  </div>
+
+  <div class="card p-4 space-y-3">
+    <div class="grid md:grid-cols-3 sm:grid-cols-2 grid-cols-1 gap-2">
+      <div>
+        <label class="text-xs text-gray-500">Tipo de gráfico</label>
+        <select id="stType" class="pill w-full">
+          <option value="bar">Barras</option>
+          <option value="stacked">Barras apiladas</option>
+          <option value="line">Línea</option>
+          <option value="pie">Torta</option>
+        </select>
+      </div>
+      <div>
+        <label class="text-xs text-gray-500">Agrupar por</label>
+        <select id="stGroup" class="pill w-full">
+          <option value="estado">Estado</option>
+          <option value="cobertura">Cobertura</option>
+          <option value="medico">Médico</option>
+          <option value="sector">Sector</option>
+          <option value="fc-dia">Fecha Carga · Día</option>
+          <option value="fc-semana">Fecha Carga · Semana</option>
+          <option value="fc-mes">Fecha Carga · Mes</option>
+          <option value="fx-dia">Fecha Cirugía · Día</option>
+          <option value="fx-semana">Fecha Cirugía · Semana</option>
+          <option value="fx-mes">Fecha Cirugía · Mes</option>
+        </select>
+      </div>
+      <div>
+        <label class="text-xs text-gray-500">Acumulado</label>
+        <select id="stAccum" class="pill w-full">
+          <option value="no">No</option>
+          <option value="si">Sí (línea/barras)</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="grid md:grid-cols-4 sm:grid-cols-2 grid-cols-1 gap-2">
+      <div class="text-xs text-gray-500">Rango Fecha de carga</div>
+      <input id="stFc1" type="date" class="pill"/>
+      <input id="stFc2" type="date" class="pill"/>
+      <div></div>
+      <div class="text-xs text-gray-500">Rango Fecha de cirugía</div>
+      <input id="stFx1" type="date" class="pill"/>
+      <input id="stFx2" type="date" class="pill"/>
+      <div></div>
+    </div>
+
+    <div class="flex gap-2">
+      <button id="stApply" class="btn btn-primary">Aplicar</button>
+      <button id="stReset" class="btn">Limpiar stats</button>
+      <div class="text-sm text-gray-500 ml-auto" id="stInfo"></div>
+    </div>
+
+    <div class="h-[520px]"><canvas id="stCanvas"></canvas></div>
+  </div>`;
+  document.getElementById('stApply').onclick = runStats;
+  document.getElementById('stReset').onclick = ()=>{
+    ['stFc1','stFc2','stFx1','stFx2'].forEach(id=>document.getElementById(id).value='');
+    runStats();
+  };
+  runStats();
+}
+
+function runStats(){
+  wsHint.textContent='Generando...';
+  let base = applyFilters(cachedAll); // respeta filtros del panel
+
+  // rangos propios
+  const fc1 = $('#stFc1')?.value || ''; const fc2 = $('#stFc2')?.value || '';
+  const fx1 = $('#stFx1')?.value || ''; const fx2 = $('#stFx2')?.value || '';
+  if (fc1 || fc2) base = base.filter(p => inRange(createdDate(p), fc1, fc2));
+  if (fx1 || fx2) base = base.filter(p => inRange(surgeryDate(p), fx1, fx2));
+
+  const type  = $('#stType')?.value || 'bar';
+  const group = $('#stGroup')?.value || 'estado';
+  const accum = $('#stAccum')?.value === 'si';
+
+  // agrupación
+  let map;
+  const getSector = (p)=> sectorCodeSafe(p) === 'hemo' ? 'Hemo' : 'Trauma';
+  switch(group){
+    case 'estado':    map = groupCount(base, p => pickStr(p, FMAP.status)   || '—'); break;
+    case 'cobertura': map = groupCount(base, p => pickStr(p, FMAP.coverage) || '—'); break;
+    case 'medico':    map = groupCount(base, p => pickStr(p, FMAP.doctor)   || '—'); break;
+    case 'sector':    map = groupCount(base, getSector); break;
+    case 'fc-dia':    map = groupCount(base, p => createdDate(p)); break;
+    case 'fc-semana': map = groupCount(base, p => formatWeek(createdDate(p))); break;
+    case 'fc-mes':    map = groupCount(base, p => formatMonth(createdDate(p))); break;
+    case 'fx-dia':    map = groupCount(base, p => surgeryDate(p)); break;
+    case 'fx-semana': map = groupCount(base, p => formatWeek(surgeryDate(p))); break;
+    case 'fx-mes':    map = groupCount(base, p => formatMonth(surgeryDate(p))); break;
+    default:          map = new Map();
+  }
+
+  let labels = Array.from(map.keys()).filter(Boolean).sort();
+  let values = labels.map(k => map.get(k) || 0);
+  if (accum && (type==='line' || type==='bar' || type==='stacked')) values = cumulate(values);
+
+  const ctx=document.getElementById('stCanvas');
+  if (statChart) statChart.destroy();
+
+  if (type === 'pie') {
+    statChart = new Chart(ctx, { type:'pie', data:{labels, datasets:[{data:values}]}, options:{responsive:true, maintainAspectRatio:false} });
+  } else if (type === 'stacked') {
+    const canStack = ['estado','cobertura','medico'].includes(group);
+    if (!canStack) {
+      statChart = new Chart(ctx, { type:'bar', data:{labels, datasets:[{label:'Casos', data:values}]}, options:{responsive:true, maintainAspectRatio:false} });
+    } else {
+      const traumaVals = labels.map(label => base.filter(p => {
+        let k; if (group==='estado') k=pickStr(p,FMAP.status)||'—';
+        if (group==='cobertura') k=pickStr(p,FMAP.coverage)||'—';
+        if (group==='medico') k=pickStr(p,FMAP.doctor)||'—';
+        return k===label && sectorCodeSafe(p)!=='hemo';
+      }).length);
+      const hemoVals = labels.map(label => base.filter(p => {
+        let k; if (group==='estado') k=pickStr(p,FMAP.status)||'—';
+        if (group==='cobertura') k=pickStr(p,FMAP.coverage)||'—';
+        if (group==='medico') k=pickStr(p,FMAP.doctor)||'—';
+        return k===label && sectorCodeSafe(p)==='hemo';
+      }).length);
+      statChart = new Chart(ctx, {
+        type:'bar',
+        data:{ labels, datasets:[
+          {label:'Trauma', data: accum? cumulate(traumaVals):traumaVals, stack:'s1'},
+          {label:'Hemo',   data: accum? cumulate(hemoVals)  :hemoVals,   stack:'s1'},
+        ]},
+        options:{ responsive:true, maintainAspectRatio:false, scales:{x:{stacked:true}, y:{stacked:true}} }
+      });
+    }
+  } else {
+    statChart = new Chart(ctx, { type, data:{labels, datasets:[{label:'Casos', data:values}]}, options:{responsive:true, maintainAspectRatio:false} });
+  }
+
+  wsHint.textContent = `${base.length} registros (post-filtro)`;
+  const stInfo = document.getElementById('stInfo'); if (stInfo) stInfo.textContent = `${labels.length} categorías`;
+}
+
+/* ========= Eventos ========= */
+function debounce(fn, ms){ let t; return (...a)=>{ clearTimeout(t); t=setTimeout(()=>fn(...a), ms); }; }
+['q'].forEach(id=> document.getElementById(id).addEventListener('input', debounce(()=>{ page=1; load(); }, 250)));
+['cov','med','est','sec','fc1','fc2','fx1','fx2','sortBy','sortDir'].forEach(id=> document.getElementById(id).addEventListener('change', ()=>{ page=1; load(); }));
+
+$('#btnRefresh').onclick = ()=>{ page=1; load(); };
+$('#btnClear').onclick   = ()=>{ ['q','cov','med','est','sec','fc1','fc2','fx1','fx2'].forEach(id=>document.getElementById(id).value=''); page=1; load(); };
+$('#prev').onclick       = ()=>{ if(page>1){page--; load();} };
+$('#next').onclick       = ()=>{ if((page*pageSize) < lastCount){ page++; load(); } };
+
+/* ========= Exportar ========= */
+$('#btnExport').onclick = async()=>{
+  const rows = applyFilters(cachedAll);
+  const out = rows.map(p=>({
+    id:pick(p,FMAP.id), nombre:pickStr(p,FMAP.name), dni:pickStr(p,FMAP.dni),
+    sector:(sectorCodeSafe(p)||''), fecha_cx:surgeryDate(p)||'', estado:pickStr(p,FMAP.status)||'',
+    email:pickStr(p,['email','mail'])||'', telefono:pickStr(p,['telefono','phone','tel'])||'',
+    cobertura:pickStr(p,FMAP.coverage)||'', medico:pickStr(p,FMAP.doctor)||''
+  }));
+  const wb=XLSX.utils.book_new(); const ws=XLSX.utils.json_to_sheet(out);
+  XLSX.utils.book_append_sheet(wb, ws, 'Pacientes'); XLSX.writeFile(wb, 'autorizaciones.xlsx');
+};
+
+/* ========= Password ========= */
+const PASSWORD_CHANGE_URL = '/accounts/password_change/';  // ruta nativa Django auth
+document.getElementById('btnPwd').onclick = ()=> window.open(PASSWORD_CHANGE_URL, '_blank');
+
+/* ========= Init ========= */
+applyGrid();
+load();
+</script>
+</body>
+</html>
