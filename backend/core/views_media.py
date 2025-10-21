@@ -1,32 +1,50 @@
 import os
 import boto3
-from django.http import HttpResponseRedirect, HttpResponseBadRequest
+from django.http import Http404, HttpResponseForbidden, HttpResponseRedirect
+from django.views.decorators.http import require_GET
+
 
 SPACES_KEY = os.getenv("SPACES_KEY")
 SPACES_SECRET = os.getenv("SPACES_SECRET")
 SPACES_REGION = os.getenv("SPACES_REGION", "sfo3")
-SPACES_NAME = os.getenv("SPACES_NAME")
+SPACES_ENDPOINT = os.getenv("SPACES_ENDPOINT", "https://sfo3.digitaloceanspaces.com")
+SPACES_NAME = os.getenv("SPACES_NAME") # ⚠️ Asegúrate que en DO se llame así
 
-session = boto3.session.Session()
-s3 = session.client(
-    "s3",
-    region_name=SPACES_REGION,
-    endpoint_url=f"https://{SPACES_REGION}.digitaloceanspaces.com",
-    aws_access_key_id=SPACES_KEY,
-    aws_secret_access_key=SPACES_SECRET,
+
+_session = boto3.session.Session(
+aws_access_key_id=SPACES_KEY,
+aws_secret_access_key=SPACES_SECRET,
+region_name=SPACES_REGION,
 )
+_s3 = _session.client("s3", endpoint_url=SPACES_ENDPOINT)
 
-def media_signed_redirect(request, path):
-    """
-    Redirige a una URL firmada de Spaces para el objeto 'path'.
-    path es el key que guardás en tu modelo (ej: patients/2/archivo.pdf)
-    """
-    if not path:
-        return HttpResponseBadRequest("missing path")
 
-    url = s3.generate_presigned_url(
-        "get_object",
-        Params={"Bucket": SPACES_NAME, "Key": path},
-        ExpiresIn=300,  # 5 minutos
-    )
-    return HttpResponseRedirect(url)
+
+
+@require_GET
+def media_signed(request, object_key: str):
+"""Genera una URL pre-firmada por 5 minutos y redirige (inline)."""
+if not object_key:
+raise Http404("Missing object key")
+
+
+if not SPACES_NAME:
+return HttpResponseForbidden("Bucket no configurado")
+
+
+try:
+url = _s3.generate_presigned_url(
+ClientMethod="get_object",
+Params={
+"Bucket": SPACES_NAME,
+"Key": object_key,
+# inline para previsualización en <img>/<iframe>
+"ResponseContentDisposition": "inline",
+},
+ExpiresIn=300, # 5 minutos
+)
+except Exception:
+return HttpResponseForbidden("No autorizado")
+
+
+return HttpResponseRedirect(url)
