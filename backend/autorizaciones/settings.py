@@ -81,12 +81,10 @@ USE_TZ = True
 # --- Static / WhiteNoise ---
 STATIC_URL = "/static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
-# Si además tenés una carpeta raíz /static, descomentá:
-# STATICFILES_DIRS = [BASE_DIR / "static"]
 STATICFILES_STORAGE = "whitenoise.storage.CompressedManifestStaticFilesStorage"
 
-# (Tus HTML están en app: core/static/panel/index.html y core/static/qr/index.html)
-# WhiteNoise los sirve en /static/... después de collectstatic, sin rutas extra.
+# 👇 Forzamos a que se copien tus HTML de core/static/** a staticfiles/
+STATICFILES_DIRS = [BASE_DIR / "core" / "static"]
 
 # --- Media en DigitalOcean Spaces ---
 DEFAULT_FILE_STORAGE = "storages.backends.s3boto3.S3Boto3Storage"
@@ -105,18 +103,14 @@ AWS_QUERYSTRING_AUTH = True
 # --- Seguridad detrás del proxy de DO ---
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 SECURE_SSL_REDIRECT = os.getenv("SECURE_SSL_REDIRECT", "1") == "1"
-
-# Eximí el health del redirect a https para que DO lo pueda chequear por HTTP interno
-SECURE_REDIRECT_EXEMPT = [r"^v1/health/?$"]
+SECURE_REDIRECT_EXEMPT = [r"^v1/health/?$"]  # para que el health de DO no redirija a https
 
 CSRF_TRUSTED_ORIGINS = [
     "https://*.ondigitalocean.app",
     "https://*.digitaloceanspaces.com",
-    # podés agregar tu URL exacta si querés:
-    # "https://starfish-app-xxxx.ondigitalocean.app",
 ]
 
-# --- DRF (las viewsets públicas ya quitan SessionAuth donde corresponde) ---
+# --- DRF ---
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": [
         "rest_framework.authentication.SessionAuthentication",
