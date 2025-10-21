@@ -10,7 +10,7 @@ class PatientViewSet(viewsets.ModelViewSet):
     queryset = Patient.objects.all().order_by("-created_at")
     serializer_class = PatientSerializer
 
-    # Público (QR) sin SessionAuth → evita CSRF
+    # Público (QR) sin SessionAuth → evita CSRF en envíos consecutivos
     permission_classes = [AllowAny]
     authentication_classes = []
 
@@ -39,7 +39,7 @@ class AttachmentViewSet(mixins.CreateModelMixin,
     serializer_class = AttachmentSerializer
     parser_classes = (MultiPartParser, FormParser)
 
-    # Público para flujo QR (sin CSRF)
+    # Público para flujo QR (subida sin CSRF)
     permission_classes = [AllowAny]
     authentication_classes = []
 
