@@ -1,17 +1,18 @@
 import os
 from pathlib import Path
-import dj_database_url
+from datetime import timedelta
 
+# === Paths ===
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-# === Seguridad ===
-SECRET_KEY = os.getenv("DJANGO_SECRET_KEY", "changeme")
-DEBUG = os.getenv("DEBUG", "False") == "True"
-ALLOWED_HOSTS = os.getenv("ALLOWED_HOSTS", "localhost").split(",")
+# === Core ===
+SECRET_KEY = os.getenv("SECRET_KEY", "CHANGE_ME_IN_PROD")
+DEBUG = os.getenv("DEBUG", "0") == "1"
 
-CSRF_TRUSTED_ORIGINS = os.getenv("CSRF_TRUSTED_ORIGINS", "https://starfish-app-putz9.ondigitalocean.app").split(",")
+# ALLOWED_HOSTS: coma-separado → "app1.com,app2.com"
+ALLOWED_HOSTS = [h for h in os.getenv("ALLOWED_HOSTS", "").split(",") if h] or ["*"]
 
-# === Aplicaciones ===
+# === Apps ===
 INSTALLED_APPS = [
     "django.contrib.admin",
     "django.contrib.auth",
@@ -20,17 +21,18 @@ INSTALLED_APPS = [
     "django.contrib.messages",
     "django.contrib.staticfiles",
 
-    # Externas
-    "storages",
+    # third-party
+    "rest_framework",
+    "storages",        # django-storages para DigitalOcean Spaces
 
-    # Internas
+    # apps propias
     "core",
 ]
 
-# === Middlewares ===
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
-    "whitenoise.middleware.WhiteNoiseMiddleware",  # importante para staticfiles
+    # WhiteNoise para servir estáticos en DO
+    "whitenoise.middleware.WhiteNoiseMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
@@ -59,16 +61,29 @@ TEMPLATES = [
 
 WSGI_APPLICATION = "autorizaciones.wsgi.application"
 
-# === Base de Datos ===
-DATABASES = {
-    "default": dj_database_url.config(
-        default=os.getenv("DATABASE_URL"),
-        conn_max_age=600,
-        ssl_require=True,
-    )
-}
+# === Database ===
+# Usa DATABASE_URL (Postgres en DO) o SQLite en dev.
+# Ejemplo DATABASE_URL:
+# postgres://USER:PASSWORD@HOST:PORT/DB_NAME
+DATABASE_URL = os.getenv("DATABASE_URL", "")
+if DATABASE_URL:
+    import dj_database_url
+    DATABASES = {
+        "default": dj_database_url.parse(
+            DATABASE_URL,
+            conn_max_age=600,
+            ssl_require=os.getenv("DB_SSL_REQUIRE", "1") == "1",
+        )
+    }
+else:
+    DATABASES = {
+        "default": {
+            "ENGINE": "django.db.backends.sqlite3",
+            "NAME": BASE_DIR / "db.sqlite3",
+        }
+    }
 
-# === Passwords ===
+# === Passwords / Auth ===
 AUTH_PASSWORD_VALIDATORS = [
     {"NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"},
     {"NAME": "django.contrib.auth.password_validation.MinimumLengthValidator"},
@@ -82,42 +97,72 @@ TIME_ZONE = "America/Argentina/Buenos_Aires"
 USE_I18N = True
 USE_TZ = True
 
-# === Archivos Estáticos ===
+# === Static / Media ===
+# WhiteNoise (admin y assets del front)
 STATIC_URL = "/static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
-STATICFILES_DIRS = [BASE_DIR / "static"]
-
-# WhiteNoise (sirve los estáticos desde container)
 STATICFILES_STORAGE = "whitenoise.storage.CompressedManifestStaticFilesStorage"
 
-# === Media (DigitalOcean Spaces) ===
+# Media en DigitalOcean Spaces (django-storages + boto3)
 DEFAULT_FILE_STORAGE = "storages.backends.s3boto3.S3Boto3Storage"
 
+# Variables de Spaces desde ENV (DEBES CARGARLAS EN DO)
 AWS_S3_REGION_NAME = os.getenv("SPACES_REGION", "sfo3")
-AWS_S3_ENDPOINT_URL = f"https://{AWS_S3_REGION_NAME}.digitaloceanspaces.com"
-AWS_STORAGE_BUCKET_NAME = os.getenv("SPACES_NAME", "autorizaciones-media")
-AWS_ACCESS_KEY_ID = os.getenv("SPACES_KEY")
-AWS_SECRET_ACCESS_KEY = os.getenv("SPACES_SECRET")
-AWS_S3_SIGNATURE_VERSION = "s3v4"
+AWS_S3_ENDPOINT_URL = os.getenv("SPACES_ENDPOINT", "https://sfo3.digitaloceanspaces.com")
+AWS_STORAGE_BUCKET_NAME = os.getenv("SPACES_NAME")  # nombre exacto del bucket
+
+# Estilo y firma
 AWS_S3_ADDRESSING_STYLE = "virtual"
+AWS_S3_SIGNATURE_VERSION = "s3v4"
 
-# Público para que el panel/admin abra los archivos
-AWS_DEFAULT_ACL = "public-read"
-AWS_QUERYSTRING_AUTH = False
+# Recomendado con media firmada y bucket privado:
+AWS_DEFAULT_ACL = None
+AWS_QUERYSTRING_AUTH = True
 
-AWS_S3_OBJECT_PARAMETERS = {"CacheControl": "max-age=86400"}
+# Si prefirieras objetos públicos (no recomendado):
+# AWS_DEFAULT_ACL = "public-read"
+# AWS_QUERYSTRING_AUTH = False
 
-MEDIA_URL = f"https://{AWS_STORAGE_BUCKET_NAME}.{AWS_S3_REGION_NAME}.digitaloceanspaces.com/"
-MEDIA_ROOT = os.getenv("MEDIA_ROOT", "/app/media")
+# === Seguridad básica (prod) ===
+SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+SESSION_COOKIE_SECURE = os.getenv("SESSION_COOKIE_SECURE", "1") == "1"
+CSRF_COOKIE_SECURE = os.getenv("CSRF_COOKIE_SECURE", "1") == "1"
+SECURE_HSTS_SECONDS = int(os.getenv("SECURE_HSTS_SECONDS", "0"))  # p.ej. 31536000 en prod
+SECURE_HSTS_INCLUDE_SUBDOMAINS = os.getenv("SECURE_HSTS_INCLUDE_SUBDOMAINS", "0") == "1"
+SECURE_HSTS_PRELOAD = os.getenv("SECURE_HSTS_PRELOAD", "0") == "1"
+SECURE_SSL_REDIRECT = os.getenv("SECURE_SSL_REDIRECT", "1") == "1"
 
-# === Config adicional ===
-DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
+# CSRF / CORS (para panel/QR en DO App)
+# Agregamos dominios típicos de DO App Platform
+CSRF_TRUSTED_ORIGINS = [
+    "https://*.ondigitalocean.app",
+    "https://*.digitaloceanspaces.com",
+    # Agregá tu URL pública si querés ser explícito:
+    # "https://starfish-app-putz9.ondigitalocean.app",
+]
+# Si usás django-cors-headers, podés sumar:
+# CORS_ALLOWED_ORIGINS = [
+#     "https://starfish-app-putz9.ondigitalocean.app",
+# ]
 
-# === Logging opcional ===
+# === DRF básico ===
+REST_FRAMEWORK = {
+    "DEFAULT_AUTHENTICATION_CLASSES": [
+        # Nota: para los endpoints públicos (QR) ya sacamos auth en las viewsets
+        "rest_framework.authentication.SessionAuthentication",
+        "rest_framework.authentication.BasicAuthentication",
+    ],
+    "DEFAULT_PERMISSION_CLASSES": [
+        "rest_framework.permissions.IsAuthenticatedOrReadOnly",
+    ],
+}
+
+# === Logging (útil en DO) ===
 LOGGING = {
     "version": 1,
     "disable_existing_loggers": False,
     "handlers": {"console": {"class": "logging.StreamHandler"}},
-    "root": {"handlers": ["console"], "level": "INFO"},
+    "root": {"handlers": ["console"], "level": os.getenv("DJANGO_LOG_LEVEL", "INFO")},
 }
 
+DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
