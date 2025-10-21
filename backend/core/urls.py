@@ -3,7 +3,7 @@ from rest_framework.routers import DefaultRouter
 
 from .views import PatientViewSet, AttachmentViewSet
 from .views_media import media_signed
-from .views_health import health  # ⬅️ import del health-check
+from .views_health import health  # nuevo
 
 router = DefaultRouter()
 router.register(r"patients", PatientViewSet, basename="patients")
@@ -12,5 +12,5 @@ router.register(r"attachments", AttachmentViewSet, basename="attachments")
 urlpatterns = [
     path("", include(router.urls)),
     path("media-signed/<path:object_key>", media_signed, name="media_signed"),
-    path("health/", health, name="health"),  # ⬅️ nuevo endpoint para DO
+    path("health/", health, name="health"),  # endpoint que siempre da 200
 ]
