@@ -6,14 +6,11 @@ class PatientSerializer(serializers.ModelSerializer):
     class Meta:
         model = Patient
         fields = "__all__"
-        # ajustá estos nombres si en tu modelo se llaman distinto
         read_only_fields = ["id", "created_at", "updated_at"]
 
 
 class AttachmentSerializer(serializers.ModelSerializer):
-    # Campos derivados para ayudar al panel:
-    # - url: URL directa (puede ser None si el bucket es privado)
-    # - key: clave interna en el bucket (para firmar con /v1/media-signed/<key>)
+    # Devuelve url (si existe) y key para firmar vía /v1/media-signed/<key>
     url = serializers.SerializerMethodField()
     key = serializers.SerializerMethodField()
 
@@ -25,22 +22,27 @@ class AttachmentSerializer(serializers.ModelSerializer):
             "kind",
             "name",
             "file",
-            "url",   # derivado
-            "key",   # derivado
+            "url",
+            "key",
             "created_at",
         ]
         read_only_fields = ["id", "url", "key", "created_at"]
 
     def get_url(self, obj):
         try:
-            # django-storages expone .url si AWS_QUERYSTRING_AUTH lo permite
-            return obj.file.url
+            f = getattr(obj, "file", None)
+            if not f:
+                return None
+            return f.url  # si es privado puede no resolverse; el panel usa media-signed
         except Exception:
             return None
 
     def get_key(self, obj):
         try:
-            # nombre/key interna en el bucket (p.ej. 'attachments/2/orden.pdf')
-            return obj.file.name
+            f = getattr(obj, "file", None)
+            if not f:
+                return None
+            return f.name  # p.ej. 'attachments/3/orden_123.pdf'
         except Exception:
             return None
+
