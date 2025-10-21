@@ -3,6 +3,6 @@ from django.views.generic import RedirectView
 
 urlpatterns = [
     path("v1/", include("core.urls")),
-    # Redirección de la raíz al panel estático
+    # Redirige raíz al panel
     path("", RedirectView.as_view(url="/static/panel/index.html", permanent=False)),
 ]
