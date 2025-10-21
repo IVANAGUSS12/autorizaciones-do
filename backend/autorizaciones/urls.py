@@ -1,14 +1,12 @@
 from django.contrib import admin
 from django.urls import path, include
-from django.views.generic import RedirectView
 
 urlpatterns = [
-    # Admin de Django
+    # Admin normal
     path("admin/", admin.site.urls),
 
-    # API + vistas del core
+    # API
     path("v1/", include("core.urls")),
-
-    # Raíz -> panel
-    path("", RedirectView.as_view(url="/v1/panel/", permanent=False)),
 ]
+
+# NO redirigimos "/" a ningún lado: /static/... lo sirve WhiteNoise directo.
