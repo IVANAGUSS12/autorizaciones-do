@@ -10,7 +10,7 @@ class PatientSerializer(serializers.ModelSerializer):
 
 
 class AttachmentSerializer(serializers.ModelSerializer):
-    # Campos calculados: url directa (si existe) y key para firmar
+    # Campos calculados para el panel/QR
     url = serializers.SerializerMethodField()
     key = serializers.SerializerMethodField()
 
@@ -33,7 +33,7 @@ class AttachmentSerializer(serializers.ModelSerializer):
             f = getattr(obj, "file", None)
             if not f:
                 return None
-            # Puede ser privada; si no resuelve, devolvemos None y el panel usa media-signed
+            # Si el storage expone URL directa, úsala
             return f.url
         except Exception:
             return None
@@ -43,7 +43,7 @@ class AttachmentSerializer(serializers.ModelSerializer):
             f = getattr(obj, "file", None)
             if not f:
                 return None
-            # Key (path en storage), p.ej. "attachments/3/orden_123.pdf"
+            # Path interno (sirve para /v1/media-signed/<key>)
             return f.name
         except Exception:
             return None
