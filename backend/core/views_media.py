@@ -3,7 +3,7 @@ from django.http import Http404, HttpResponseRedirect, FileResponse
 from django.views.decorators.http import require_GET
 from django.core.files.storage import default_storage
 
-# Intento de firma en DO Spaces si hay credenciales
+# Firma en DO Spaces si hay credenciales
 try:
     import boto3
 except Exception:
@@ -38,18 +38,18 @@ def _presign_spaces(key: str) -> str | None:
 @require_GET
 def media_signed(request, object_key: str):
     """
-    Devuelve una URL firmada (Spaces) o redirige a la URL del storage.
-    Si el storage es local y el archivo existe, lo sirve con FileResponse.
+    Devuelve URL firmada (Spaces), o redirige a la URL pública del storage,
+    o sirve el archivo local si existe.
     """
     if not object_key:
         raise Http404("Missing key")
 
-    # 1) Presign en Spaces
+    # 1) Firmar en Spaces
     url = _presign_spaces(object_key)
     if url:
         return HttpResponseRedirect(url)
 
-    # 2) Si el storage tiene URL pública (S3 público u otro), probamos
+    # 2) URL pública del storage (si existe)
     try:
         storage_url = default_storage.url(object_key)
         if storage_url and storage_url.startswith(("http://", "https://")):
@@ -57,7 +57,7 @@ def media_signed(request, object_key: str):
     except Exception:
         pass
 
-    # 3) Fallback: storage local
+    # 3) Fallback local
     if default_storage.exists(object_key):
         f = default_storage.open(object_key, "rb")
         return FileResponse(f)
