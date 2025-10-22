@@ -1,12 +1,12 @@
 import os
-from django.http import Http404, HttpResponseForbidden, HttpResponseRedirect, FileResponse
+from django.http import Http404, HttpResponseRedirect, FileResponse
 from django.views.decorators.http import require_GET
 from django.core.files.storage import default_storage
 
-# Opcional: firma en Spaces si hay credenciales, si no, fallback a URL del storage o archivo local
+# Intento de firma en DO Spaces si hay credenciales
 try:
     import boto3
-except Exception:  # pragma: no cover
+except Exception:
     boto3 = None
 
 SPACES_KEY = os.getenv("SPACES_KEY")
@@ -44,7 +44,7 @@ def media_signed(request, object_key: str):
     if not object_key:
         raise Http404("Missing key")
 
-    # 1) Intento firmar en Spaces
+    # 1) Presign en Spaces
     url = _presign_spaces(object_key)
     if url:
         return HttpResponseRedirect(url)
@@ -57,7 +57,7 @@ def media_signed(request, object_key: str):
     except Exception:
         pass
 
-    # 3) Fallback: si existe localmente, lo servimos
+    # 3) Fallback: storage local
     if default_storage.exists(object_key):
         f = default_storage.open(object_key, "rb")
         return FileResponse(f)
