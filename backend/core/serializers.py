@@ -10,7 +10,7 @@ class PatientSerializer(serializers.ModelSerializer):
 
 
 class AttachmentSerializer(serializers.ModelSerializer):
-    # Devuelve url (si existe) y key para firmar vía /v1/media-signed/<key>
+    # Campos calculados: url directa (si existe) y key para firmar
     url = serializers.SerializerMethodField()
     key = serializers.SerializerMethodField()
 
@@ -33,7 +33,8 @@ class AttachmentSerializer(serializers.ModelSerializer):
             f = getattr(obj, "file", None)
             if not f:
                 return None
-            return f.url  # si es privado puede no resolverse; el panel usa media-signed
+            # Puede ser privada; si no resuelve, devolvemos None y el panel usa media-signed
+            return f.url
         except Exception:
             return None
 
@@ -42,7 +43,7 @@ class AttachmentSerializer(serializers.ModelSerializer):
             f = getattr(obj, "file", None)
             if not f:
                 return None
-            return f.name  # p.ej. 'attachments/3/orden_123.pdf'
+            # Key (path en storage), p.ej. "attachments/3/orden_123.pdf"
+            return f.name
         except Exception:
             return None
-
