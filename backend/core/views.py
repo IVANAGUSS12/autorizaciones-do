@@ -1,45 +1,43 @@
-from rest_framework import viewsets, mixins
+from rest_framework.viewsets import ModelViewSet
+from rest_framework.response import Response
 from rest_framework.parsers import MultiPartParser, FormParser
-from rest_framework.permissions import AllowAny
+from rest_framework import status, permissions, authentication
 
 from .models import Patient, Attachment
 from .serializers import PatientSerializer, AttachmentSerializer
 
 
-class PatientViewSet(viewsets.ModelViewSet):
+class PatientViewSet(ModelViewSet):
     queryset = Patient.objects.all().order_by("-created_at")
     serializer_class = PatientSerializer
-
-    # Público (QR) sin SessionAuth → evita CSRF en envíos consecutivos
-    permission_classes = [AllowAny]
-    authentication_classes = []
-
-    def get_queryset(self):
-        qs = super().get_queryset()
-        q = self.request.query_params
-        cobertura = q.get("cobertura") or ""
-        estado = q.get("estado") or ""
-        medico = q.get("medico") or ""
-        sector_code = q.get("sector_code") or ""
-        if cobertura:
-            qs = qs.filter(cobertura=cobertura)
-        if estado:
-            qs = qs.filter(estado=estado)
-        if medico:
-            qs = qs.filter(medico=medico)
-        if sector_code:
-            qs = qs.filter(sector_code=sector_code)
-        return qs
+    permission_classes = [permissions.AllowAny]
+    authentication_classes = []  # sin sesión ⇒ sin CSRF para API pública
 
 
-class AttachmentViewSet(mixins.CreateModelMixin,
-                        mixins.ListModelMixin,
-                        viewsets.GenericViewSet):
-    queryset = Attachment.objects.all().order_by("-created_at")
+class AttachmentViewSet(ModelViewSet):
+    """
+    - GET /v1/attachments/       → lista (no se cae si falta file/url)
+    - POST /v1/attachments/      → multipart (archivo)
+      fields: patient (id), kind, name, file
+    """
+    queryset = Attachment.objects.select_related("patient").all().order_by("-created_at")
     serializer_class = AttachmentSerializer
-    parser_classes = (MultiPartParser, FormParser)
+    permission_classes = [permissions.AllowAny]
+    authentication_classes = []  # sin sesión ⇒ sin CSRF
+    parser_classes = [MultiPartParser, FormParser]
+    http_method_names = ["get", "post", "delete", "head", "options"]
 
-    # Público para flujo QR (subida sin CSRF)
-    permission_classes = [AllowAny]
-    authentication_classes = []
+    def create(self, request, *args, **kwargs):
+        data = request.data.copy()
 
+        # Validamos que llegue patient y file
+        if not data.get("patient"):
+            return Response({"detail": "patient is required"}, status=status.HTTP_400_BAD_REQUEST)
+        if "file" not in request.data or request.data.get("file") in (None, "", b""):
+            return Response({"detail": "file is required"}, status=status.HTTP_400_BAD_REQUEST)
+
+        serializer = self.get_serializer(data=data)
+        serializer.is_valid(raise_exception=True)
+        self.perform_create(serializer)
+        headers = self.get_success_headers(serializer.data)
+        return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
