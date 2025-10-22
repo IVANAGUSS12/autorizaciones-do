@@ -21,7 +21,7 @@ class AttachmentAdmin(admin.ModelAdmin):
 
     def file_key(self, obj):
         try:
-            return obj.file.name  # NUNCA usamos file.url en admin
+            return obj.file.name  # no usamos file.url en admin
         except Exception:
             return "-"
     file_key.short_description = "Key"
