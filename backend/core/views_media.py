@@ -1,65 +1,67 @@
 import os
-from django.http import Http404, HttpResponseRedirect, FileResponse
-from django.views.decorators.http import require_GET
+from urllib.parse import quote
+from django.http import HttpResponseRedirect, Http404, FileResponse
 from django.core.files.storage import default_storage
+from django.conf import settings
 
-# Firma en DO Spaces si hay credenciales
-try:
-    import boto3
-except Exception:
-    boto3 = None
-
-SPACES_KEY = os.getenv("SPACES_KEY")
-SPACES_SECRET = os.getenv("SPACES_SECRET")
-SPACES_REGION = os.getenv("SPACES_REGION", "sfo3")
-SPACES_ENDPOINT = os.getenv("SPACES_ENDPOINT", "https://sfo3.digitaloceanspaces.com")
-SPACES_NAME = os.getenv("SPACES_NAME")
-
-
-def _presign_spaces(key: str) -> str | None:
-    if not (boto3 and SPACES_NAME and SPACES_KEY and SPACES_SECRET):
-        return None
+def _boto3_client_or_none():
     try:
-        session = boto3.session.Session(
-            aws_access_key_id=SPACES_KEY,
-            aws_secret_access_key=SPACES_SECRET,
-            region_name=SPACES_REGION,
-        )
-        s3 = session.client("s3", endpoint_url=SPACES_ENDPOINT)
-        return s3.generate_presigned_url(
-            ClientMethod="get_object",
-            Params={"Bucket": SPACES_NAME, "Key": key, "ResponseContentDisposition": "inline"},
-            ExpiresIn=300,
-        )
+        import boto3  # noqa
     except Exception:
         return None
 
+    endpoint = os.getenv("SPACES_ENDPOINT") or os.getenv("AWS_S3_ENDPOINT_URL")
+    key_id = os.getenv("SPACES_KEY") or os.getenv("AWS_ACCESS_KEY_ID")
+    secret = os.getenv("SPACES_SECRET") or os.getenv("AWS_SECRET_ACCESS_KEY")
+    region = os.getenv("SPACES_REGION") or os.getenv("AWS_REGION") or "us-east-1"
 
-@require_GET
-def media_signed(request, object_key: str):
+    if not (endpoint and key_id and secret):
+        return None
+
+    import boto3
+    session = boto3.session.Session()
+    return session.client(
+        "s3",
+        region_name=region,
+        endpoint_url=endpoint,
+        aws_access_key_id=key_id,
+        aws_secret_access_key=secret,
+    )
+
+def media_signed_view(request, key: str):
     """
-    Devuelve URL firmada (Spaces), o redirige a la URL pública del storage,
-    o sirve el archivo local si existe.
+    GET /v1/media-signed/<path:key>
+    - Si hay credenciales de Spaces, genera un presigned URL con expiración corta.
+    - Si no, intenta default_storage.url(key).
+    - En entorno local con FileSystemStorage, devuelve el archivo directo si existe.
     """
-    if not object_key:
-        raise Http404("Missing key")
+    # 1) Intento firmar con Spaces/S3
+    bucket = os.getenv("SPACES_BUCKET") or os.getenv("AWS_STORAGE_BUCKET_NAME")
+    client = _boto3_client_or_none()
+    if client and bucket:
+        try:
+            url = client.generate_presigned_url(
+                ClientMethod="get_object",
+                Params={"Bucket": bucket, "Key": key},
+                ExpiresIn=300,  # 5 minutos
+                HttpMethod="GET",
+            )
+            return HttpResponseRedirect(url)
+        except Exception:
+            pass  # probamos siguientes caminos
 
-    # 1) Firmar en Spaces
-    url = _presign_spaces(object_key)
-    if url:
-        return HttpResponseRedirect(url)
-
-    # 2) URL pública del storage (si existe)
+    # 2) Intento url del storage (si es público o configurado)
     try:
-        storage_url = default_storage.url(object_key)
-        if storage_url and storage_url.startswith(("http://", "https://")):
-            return HttpResponseRedirect(storage_url)
+        url = default_storage.url(key)
+        if url:
+            return HttpResponseRedirect(url)
     except Exception:
         pass
 
-    # 3) Fallback local
-    if default_storage.exists(object_key):
-        f = default_storage.open(object_key, "rb")
-        return FileResponse(f)
-
-    raise Http404("Archivo no encontrado")
+    # 3) Entorno local: tratamos de abrir el archivo físico
+    try:
+        # default_storage.path(key) sólo existe en FileSystemStorage
+        path = default_storage.path(key)
+        return FileResponse(open(path, "rb"))
+    except Exception:
+        raise Http404(f"No se pudo resolver el recurso solicitado: {quote(key)}")
