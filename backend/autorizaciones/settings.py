@@ -1,14 +1,13 @@
-import os
+
 from pathlib import Path
+import os
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-# --- Básico ---
-SECRET_KEY = os.getenv("SECRET_KEY", "CHANGE_ME")
-DEBUG = os.getenv("DEBUG", "0") == "1"
-ALLOWED_HOSTS = [h for h in os.getenv("ALLOWED_HOSTS", "").split(",") if h] or ["*"]
+SECRET_KEY = os.getenv("SECRET_KEY", "change-me")
+DEBUG = os.getenv("DEBUG", "False").lower() == "true"
+ALLOWED_HOSTS = ["*"]
 
-# --- Apps ---
 INSTALLED_APPS = [
     "django.contrib.admin",
     "django.contrib.auth",
@@ -17,11 +16,9 @@ INSTALLED_APPS = [
     "django.contrib.messages",
     "django.contrib.staticfiles",
     "rest_framework",
-    "storages",
     "core",
 ]
 
-# --- Middleware (WhiteNoise inmediatamente después de Security) ---
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
     "whitenoise.middleware.WhiteNoiseMiddleware",
@@ -38,7 +35,7 @@ ROOT_URLCONF = "autorizaciones.urls"
 TEMPLATES = [
     {
         "BACKEND": "django.template.backends.django.DjangoTemplates",
-        "DIRS": [BASE_DIR / "templates", BASE_DIR / "core" / "templates"],
+        "DIRS": [BASE_DIR / "core" / "templates"],
         "APP_DIRS": True,
         "OPTIONS": {
             "context_processors": [
@@ -53,76 +50,52 @@ TEMPLATES = [
 
 WSGI_APPLICATION = "autorizaciones.wsgi.application"
 
-# --- Base de datos ---
-DATABASE_URL = os.getenv("DATABASE_URL", "")
-if DATABASE_URL:
-    import dj_database_url
-    DATABASES = {
-        "default": dj_database_url.parse(DATABASE_URL, conn_max_age=600, ssl_require=False)
+# Base de datos (config tomada de variables de entorno)
+DATABASES = {
+    "default": {
+        "ENGINE": "django.db.backends.postgresql",
+        "NAME": os.getenv("DB_NAME", "autorizaciones"),
+        "USER": os.getenv("DB_USER", "postgres"),
+        "PASSWORD": os.getenv("DB_PASSWORD", ""),
+        "HOST": os.getenv("DB_HOST", "localhost"),
+        "PORT": os.getenv("DB_PORT", "5432"),
     }
-else:
-    DATABASES = {
-        "default": {
-            "ENGINE": "django.db.backends.sqlite3",
-            "NAME": BASE_DIR / "db.sqlite3",
-        }
-    }
+}
 
-# --- i18n ---
-LANGUAGE_CODE = "es-ar"
-TIME_ZONE = "America/Argentina/Buenos_Aires"
-USE_I18N = True
-USE_TZ = True
-
-# --- Static / WhiteNoise ---
-STATIC_URL = "/static/"
-STATIC_ROOT = BASE_DIR / "staticfiles"
-
-_core_static = BASE_DIR / "core" / "static"
-STATICFILES_DIRS = [_core_static] if _core_static.exists() else []
-
-STATICFILES_STORAGE = "whitenoise.storage.CompressedManifestStaticFilesStorage"
-
-# --- Media en DigitalOcean Spaces ---
-DEFAULT_FILE_STORAGE = "storages.backends.s3boto3.S3Boto3Storage"
-
-AWS_S3_REGION_NAME = os.getenv("SPACES_REGION", "sfo3")
-AWS_S3_ENDPOINT_URL = os.getenv("SPACES_ENDPOINT", "https://sfo3.digitaloceanspaces.com")
-AWS_STORAGE_BUCKET_NAME = os.getenv("SPACES_NAME")
-
-AWS_S3_ADDRESSING_STYLE = "virtual"
-AWS_S3_SIGNATURE_VERSION = "s3v4"
-
-AWS_DEFAULT_ACL = None
-AWS_QUERYSTRING_AUTH = True
-
-# --- Seguridad detrás del proxy de DO ---
-SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
-SECURE_SSL_REDIRECT = os.getenv("SECURE_SSL_REDIRECT", "1") == "1"
-SECURE_REDIRECT_EXEMPT = [r"^v1/health/?$"]
-
-CSRF_TRUSTED_ORIGINS = [
-    "https://*.ondigitalocean.app",
-    "https://*.digitaloceanspaces.com",
-]
-
-# --- DRF ---
+# DRF: abierto para QR/panel + parsers para multipart
 REST_FRAMEWORK = {
-    # No usamos SessionAuthentication → no hay CSRF.
     "DEFAULT_AUTHENTICATION_CLASSES": [
         "rest_framework.authentication.BasicAuthentication",
     ],
     "DEFAULT_PERMISSION_CLASSES": [
         "rest_framework.permissions.AllowAny",
     ],
+    "DEFAULT_PARSER_CLASSES": [
+        "rest_framework.parsers.JSONParser",
+        "rest_framework.parsers.FormParser",
+        "rest_framework.parsers.MultiPartParser",
+    ],
 }
 
-# --- Logging ---
-LOGGING = {
-    "version": 1,
-    "disable_existing_loggers": False,
-    "handlers": {"console": {"class": "logging.StreamHandler"}},
-    "root": {"handlers": ["console"], "level": os.getenv("DJANGO_LOG_LEVEL", "INFO")},
-}
+# Static / WhiteNoise
+STATIC_URL = "/static/"
+STATIC_ROOT = BASE_DIR / "staticfiles"
+STATICFILES_DIRS = [BASE_DIR / "core" / "static"]
+STATICFILES_STORAGE = "whitenoise.storage.CompressedManifestStaticFilesStorage"
 
-DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
+# Archivos media con django-storages (si lo usás) o FileSystemStorage
+DEFAULT_FILE_STORAGE = os.getenv("DEFAULT_FILE_STORAGE", "django.core.files.storage.FileSystemStorage")
+
+# Timezone/idioma
+LANGUAGE_CODE = "es-ar"
+TIME_ZONE = "America/Argentina/Buenos_Aires"
+USE_I18N = True
+USE_TZ = True
+
+# Seguridad básica
+SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+SESSION_COOKIE_SECURE = True
+CSRF_COOKIE_SECURE = True
+
+# Health check path usado por DO
+APP_HEALTHCHECK_PATH = os.getenv("APP_HEALTHCHECK_PATH", "/v1/health/")
