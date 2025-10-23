@@ -50,12 +50,12 @@ def _try_presign(client, bucket, key):
 
 def media_signed_view(request, key: str):
     """
-    Recibe una 'key' (p. ej. 'patients/6/archivo.pdf'), maneja espacios/acentos
-    y prueba las variantes más comunes, firmando si el bucket es privado.
+    Recibe una 'key' (p.ej. 'patients/6/archivo.pdf'), maneja espacios/acentos,
+    prueba variantes con/sin 'media/' y evita bucles de redirección.
     """
     original = unquote(key)
 
-    # Probar variantes: con/sin 'media/' y con/sin leading slash
+    # Variantes comunes (con/sin 'media/' y leading slash)
     candidates = [original]
     if original.startswith("/"):
         candidates.append(original.lstrip("/"))
@@ -67,33 +67,31 @@ def media_signed_view(request, key: str):
     bucket = _bucket()
     client = _client()
 
-    # 1) Firma presignada (privado)
+    # 1) Firma DO Spaces / S3 (bucket privado)
     if client and bucket:
         for k in candidates:
             url = _try_presign(client, bucket, k)
             if url:
                 return HttpResponseRedirect(url)
 
-    # 2) URL del storage (si el backend la provee)
+    # 2) URL directa del storage si existe (EVITANDO /patients/... para no hacer loop)
     for k in candidates:
         try:
             url = default_storage.url(k)
-            if url:
+            if url and not url.startswith("/patients/"):
                 return HttpResponseRedirect(url)
         except Exception:
             pass
 
-    # 3) URL directa a Spaces (si el bucket es público)
+    # 3) URL directa a Spaces (bucket público): dejamos que el CDN responda 200/403/404
     ep = _endpoint()
     if ep and bucket:
-        # redirigimos igual; el CDN responderá 200/403/404
         for k in candidates:
             direct = f"{ep.rstrip('/')}/{bucket}/{k.lstrip('/')}"
             return HttpResponseRedirect(direct)
 
-    # 4) Último recurso: servir desde disco local (FileSystemStorage)
+    # 4) Último recurso: servir desde disco (FileSystemStorage / MEDIA_ROOT)
     for k in candidates:
-        # default_storage.path(...) puede no existir según backend; probamos ambos
         try:
             path = default_storage.path(k)
             return FileResponse(open(path, "rb"))
@@ -107,30 +105,30 @@ def media_signed_view(request, key: str):
 
 def patient_file_redirect(request, patient_id: int, filename: str):
     """
-    Compatibilidad para URLs antiguas del panel:
-      /patients/<id>/<filename>.pdf
-    Busca un Attachment del paciente cuyo 'name' coincida o cuyo 'file.name'
-    termine con ese filename y redirige a /v1/media-signed/<key>.
+    Compat para URLs antiguas del panel:
+      /patients/<id>/<filename> -> /v1/media-signed/<key>
+    Matchea por basename o por sufijo de 'file.name'. Evita loops.
     """
     target = unquote(filename)
 
-    # 1) intentá por 'name' exacto
+    # 1) Buscar por sufijo / basename del file.name
     try:
-        att = Attachment.objects.filter(patient_id=patient_id, name=target).order_by("-created_at").first()
-        if att and getattr(att, "file", None):
-            return HttpResponseRedirect(f"/v1/media-signed/{att.file.name}")
-    except Exception:
-        pass
-
-    # 2) intentá por sufijo del file.name
-    try:
-        for att in Attachment.objects.filter(patient_id=patient_id).order_by("-created_at"):
+        atts = Attachment.objects.filter(patient_id=patient_id).order_by("-created_at")
+        for att in atts:
             f = getattr(att, "file", None)
             if not f:
                 continue
             base = os.path.basename(f.name)
             if base == target or f.name.endswith(target):
                 return HttpResponseRedirect(f"/v1/media-signed/{f.name}")
+    except Exception:
+        pass
+
+    # 2) Última chance por 'name'
+    try:
+        att = Attachment.objects.filter(patient_id=patient_id, name=target).order_by("-created_at").first()
+        if att and getattr(att, "file", None):
+            return HttpResponseRedirect(f"/v1/media-signed/{att.file.name}")
     except Exception:
         pass
 
