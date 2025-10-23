@@ -16,7 +16,7 @@ def qr_gracias(request):
 def qr_i(request):
     """
     Devuelve el JSON que usa el QR para combos (coberturas, médicos, sectores).
-    Lee core/static/qr/i.json si existe; si no, devuelve estructura vacía.
+    Lee core/static/qr/i.json si existe; si no, responde estructura vacía.
     """
     path = Path(settings.BASE_DIR) / "core" / "static" / "qr" / "i.json"
     if path.exists():
@@ -24,6 +24,5 @@ def qr_i(request):
             data = json.loads(path.read_text(encoding="utf-8"))
             return JsonResponse(data, safe=False)
         except Exception:
-            # JSON inválido → que se note en consola del browser
             raise Http404("i.json inválido")
     return JsonResponse({"coverages": [], "doctors": [], "sectors": []})
