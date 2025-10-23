@@ -36,14 +36,14 @@ class PatientAdmin(admin.ModelAdmin):
         full = _get_first_attr(obj, ["full_name", "nombre_completo", "name"])
         if full != "—":
             return full
-        last_ = _get_first_attr(obj, ["last_name", "apellido", "apellido_paciente"], default="")
-        first_ = _get_first_attr(obj, ["first_name", "nombre", "nombre_paciente"], default="")
+        last_ = _get_first_attr(obj, ["last_name", "apellido", "apellido_paciente"], "")
+        first_ = _get_first_attr(obj, ["first_name", "nombre", "nombre_paciente"], "")
         combo = f"{last_}, {first_}".strip().strip(",")
         return combo or "—"
     patient_name.short_description = "Paciente"
 
     def patient_coverage(self, obj):
-        return _get_first_attr(obj, ["coverage", "obra_social", "cobertura", "plan"], default="—")
+        return _get_first_attr(obj, ["coverage", "obra_social", "cobertura", "plan"], "—")
     patient_coverage.short_description = "Cobertura"
 
 @admin.register(Attachment)
@@ -60,6 +60,7 @@ class AttachmentAdmin(admin.ModelAdmin):
         key = getattr(f, "name", None) if f else None
         if not key:
             return "—"
+        # dejamos que el browser encodee; el view hará unquote al recibirla
         url = f"/v1/media-signed/{key}"
         return format_html('<a href="{}" target="_blank" rel="noopener">Abrir/Descargar</a>', url)
     media_link.short_description = "Archivo"
