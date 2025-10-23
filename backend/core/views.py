@@ -8,12 +8,12 @@ from rest_framework.parsers import MultiPartParser, FormParser
 
 from .models import Patient, Attachment
 from .serializers import PatientSerializer, AttachmentSerializer
+from django.http import JsonResponse
 
 
-# /v1/health/
-def health(request):
+# /v1/health/ (readiness para DigitalOcean)
+def health_check(request):
     return JsonResponse({"status": "ok"})
-
 
 @method_decorator(csrf_exempt, name="dispatch")   # exento de CSRF (QR/panel)
 class PatientViewSet(viewsets.ModelViewSet):
