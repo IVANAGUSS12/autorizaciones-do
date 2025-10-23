@@ -8,19 +8,19 @@ urlpatterns = [
     path("admin/", admin.site.urls),
     path("v1/", include("core.urls")),
 
-    # Páginas HTML
+    # Páginas
     path("panel/", panel_index, name="panel"),
     path("qr/", qr_index, name="qr"),
     path("gracias/", qr_gracias, name="qr-gracias"),
     path("qr/gracias.html", qr_gracias, name="qr-gracias-html"),  # alias para el front
 
-    # JSON para el QR (combos)
+    # JSON para QR
     path("qr/i", qr_i, name="qr-i"),
 
-    # Compat: primero archivos viejos del panel (evita capturar /patients/ list)
+    # Compat archivos viejos del panel (antes del listado JSON)
     path("patients/<int:patient_id>/<path:filename>", patient_file_redirect, name="patient-file"),
 
-    # Compat: endpoints que el panel pide sin /v1 (devolvemos JSON directo; SIN redirects)
+    # Compat endpoints que el panel espera sin /v1 (devolvemos JSON directo)
     path("patients/", patients_json, name="patients-json"),
     path("attachments/", attachments_json, name="attachments-json"),
 ]
