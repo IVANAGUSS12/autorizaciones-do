@@ -12,11 +12,15 @@ def _bucket():
         or os.getenv("AWS_STORAGE_BUCKET_NAME")
     )
 
-def _endpoint():
-    return os.getenv("SPACES_ENDPOINT") or os.getenv("AWS_S3_ENDPOINT_URL")
-
 def _region():
-    return os.getenv("SPACES_REGION") or os.getenv("AWS_REGION") or "us-east-1"
+    return os.getenv("SPACES_REGION") or os.getenv("AWS_REGION") or "sfo3"
+
+def _endpoint():
+    # usa variable si existe, si no construye https://<region>.digitaloceanspaces.com
+    ep = os.getenv("SPACES_ENDPOINT") or os.getenv("AWS_S3_ENDPOINT_URL")
+    if ep:
+        return ep
+    return f"https://{_region()}.digitaloceanspaces.com"
 
 def _client():
     try:
@@ -50,12 +54,13 @@ def _try_presign(client, bucket, key):
 
 def media_signed_view(request, key: str):
     """
-    Recibe una 'key' (p.ej. 'patients/6/archivo.pdf'), maneja espacios/acentos,
-    prueba variantes con/sin 'media/' y evita bucles de redirección.
+    Firma/redirige de manera robusta a un attachment:
+      - soporta claves con espacios/acentos
+      - prueba variantes con/sin 'media/' y leading slash
+      - evita loops a /patients/...
     """
     original = unquote(key)
 
-    # Variantes comunes (con/sin 'media/' y leading slash)
     candidates = [original]
     if original.startswith("/"):
         candidates.append(original.lstrip("/"))
@@ -67,30 +72,30 @@ def media_signed_view(request, key: str):
     bucket = _bucket()
     client = _client()
 
-    # 1) Firma DO Spaces / S3 (bucket privado)
+    # 1) Presign a Spaces (privado)
     if client and bucket:
         for k in candidates:
             url = _try_presign(client, bucket, k)
             if url:
                 return HttpResponseRedirect(url)
 
-    # 2) URL directa del storage si existe (EVITANDO /patients/... para no hacer loop)
+    # 2) URL del storage (evitar /patients/... para no entrar en loop)
     for k in candidates:
         try:
             url = default_storage.url(k)
-            if url and not url.startswith("/patients/"):
+            if url and not str(url).startswith("/patients/"):
                 return HttpResponseRedirect(url)
         except Exception:
             pass
 
-    # 3) URL directa a Spaces (bucket público): dejamos que el CDN responda 200/403/404
+    # 3) URL pública directa a Spaces (si el bucket es público)
     ep = _endpoint()
     if ep and bucket:
         for k in candidates:
             direct = f"{ep.rstrip('/')}/{bucket}/{k.lstrip('/')}"
             return HttpResponseRedirect(direct)
 
-    # 4) Último recurso: servir desde disco (FileSystemStorage / MEDIA_ROOT)
+    # 4) Servir desde disco (FileSystemStorage / MEDIA_ROOT)
     for k in candidates:
         try:
             path = default_storage.path(k)
@@ -107,24 +112,24 @@ def patient_file_redirect(request, patient_id: int, filename: str):
     """
     Compat para URLs antiguas del panel:
       /patients/<id>/<filename> -> /v1/media-signed/<key>
-    Matchea por basename o por sufijo de 'file.name'. Evita loops.
+    Matchea por basename o por sufijo del file.name.
     """
-    target = unquote(filename)
+    from urllib.parse import unquote as _unq
+    import os as _os
+    target = _unq(filename)
 
-    # 1) Buscar por sufijo / basename del file.name
     try:
         atts = Attachment.objects.filter(patient_id=patient_id).order_by("-created_at")
         for att in atts:
             f = getattr(att, "file", None)
             if not f:
                 continue
-            base = os.path.basename(f.name)
+            base = _os.path.basename(f.name)
             if base == target or f.name.endswith(target):
                 return HttpResponseRedirect(f"/v1/media-signed/{f.name}")
     except Exception:
         pass
 
-    # 2) Última chance por 'name'
     try:
         att = Attachment.objects.filter(patient_id=patient_id, name=target).order_by("-created_at").first()
         if att and getattr(att, "file", None):
@@ -133,3 +138,4 @@ def patient_file_redirect(request, patient_id: int, filename: str):
         pass
 
     raise Http404("Attachment no encontrado para ese paciente/nombre.")
+
