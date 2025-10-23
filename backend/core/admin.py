@@ -4,7 +4,6 @@ from django import forms
 from django.forms.widgets import ClearableFileInput
 from .models import Patient, Attachment
 
-# ---------- Helpers seguros ----------
 def _get_first_attr(obj, names, default="—"):
     for n in names:
         if hasattr(obj, n):
@@ -13,12 +12,7 @@ def _get_first_attr(obj, names, default="—"):
                 return val
     return default
 
-# ---------- Widget seguro para FileField en admin ----------
 class SafeClearableFileInput(ClearableFileInput):
-    """
-    Evita que el admin intente acceder a value.url (rompe con buckets privados).
-    No muestra el bloque "Currently: <link>".
-    """
     def get_context(self, name, value, attrs):
         ctx = super().get_context(name, value, attrs)
         ctx["widget"]["is_initial"] = False
@@ -29,25 +23,19 @@ class AttachmentAdminForm(forms.ModelForm):
     class Meta:
         model = Attachment
         fields = "__all__"
-        widgets = {
-            "file": SafeClearableFileInput
-        }
+        widgets = {"file": SafeClearableFileInput}
 
-# ---------- Patient ----------
 @admin.register(Patient)
 class PatientAdmin(admin.ModelAdmin):
-    # Getters que no dependen de nombres exactos de campos
     list_display = ("id", "patient_name", "patient_coverage", "created_at")
     search_fields = ("id",)
     list_filter = ("created_at",)
     ordering = ("-created_at",)
 
     def patient_name(self, obj):
-        # intenta: full_name, nombre_completo, name
         full = _get_first_attr(obj, ["full_name", "nombre_completo", "name"])
         if full != "—":
             return full
-        # o combina last/first si existen
         last_ = _get_first_attr(obj, ["last_name", "apellido", "apellido_paciente"], default="")
         first_ = _get_first_attr(obj, ["first_name", "nombre", "nombre_paciente"], default="")
         combo = f"{last_}, {first_}".strip().strip(",")
@@ -58,7 +46,6 @@ class PatientAdmin(admin.ModelAdmin):
         return _get_first_attr(obj, ["coverage", "obra_social", "cobertura", "plan"], default="—")
     patient_coverage.short_description = "Cobertura"
 
-# ---------- Attachment ----------
 @admin.register(Attachment)
 class AttachmentAdmin(admin.ModelAdmin):
     form = AttachmentAdminForm
@@ -69,9 +56,6 @@ class AttachmentAdmin(admin.ModelAdmin):
     ordering = ("-created_at",)
 
     def media_link(self, obj):
-        """
-        Link seguro vía /v1/media-signed/<key> (no usa file.url).
-        """
         f = getattr(obj, "file", None)
         key = getattr(f, "name", None) if f else None
         if not key:
