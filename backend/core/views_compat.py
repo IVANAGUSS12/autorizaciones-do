@@ -1,7 +1,7 @@
 from django.http import JsonResponse
 from .models import Patient, Attachment
 
-# Devuelven el mismo JSON que /v1/patients/ y /v1/attachments/ para no tocar el front.
+# Clonan la respuesta de /v1/patients/ y /v1/attachments/ (para no tocar el front).
 
 def patients_json(request):
     qs = Patient.objects.all().order_by("-created_at").values(
