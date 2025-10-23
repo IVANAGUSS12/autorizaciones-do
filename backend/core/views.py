@@ -1,39 +1,15 @@
-from django.http import JsonResponse
-from django.views.decorators.csrf import csrf_exempt
-from django.utils.decorators import method_decorator
-from rest_framework import viewsets, status, permissions
-from rest_framework.parsers import MultiPartParser, FormParser
-from .models import Patient, Attachment
-from .serializers import PatientSerializer, AttachmentSerializer
 
-# ✅ Ruta de salud para DigitalOcean
-@csrf_exempt
-def health(request):
-    return JsonResponse({"status": "ok"}, status=200)
+from django.contrib import admin
+from django.urls import path, re_path
+from core import views as core_views
 
-
-@method_decorator(csrf_exempt, name="dispatch")
-class PatientViewSet(viewsets.ModelViewSet):
-    queryset = Patient.objects.all().order_by("-created_at")
-    serializer_class = PatientSerializer
-    permission_classes = [permissions.AllowAny]
-
-
-@method_decorator(csrf_exempt, name="dispatch")
-class AttachmentViewSet(viewsets.ModelViewSet):
-    queryset = Attachment.objects.all().order_by("-created_at")
-    serializer_class = AttachmentSerializer
-    permission_classes = [permissions.AllowAny]
-    parser_classes = [MultiPartParser, FormParser]
-
-    def create(self, request, *args, **kwargs):
-        data = request.data
-        if not data.get("patient"):
-            return JsonResponse({"error": "Patient is required"}, status=400)
-        if "file" not in data or not data["file"]:
-            return JsonResponse({"error": "File is required"}, status=400)
-
-        serializer = self.get_serializer(data=data)
-        serializer.is_valid(raise_exception=True)
-        serializer.save()
-        return JsonResponse(serializer.data, status=201)
+urlpatterns = [
+    path("admin/", admin.site.urls),
+    path("v1/health/", core_views.health_check, name="health"),
+    path("v1/patients/", core_views.PatientsView.as_view(), name="patients"),
+    path("v1/attachments/", core_views.AttachmentsView.as_view(), name="attachments"),
+    re_path(r"^v1/media-signed/(?P<key>.+)$", core_views.media_signed, name="media_signed"),
+    path("panel/", core_views.panel, name="panel"),
+    path("qr/", core_views.qr, name="qr"),
+    path("gracias/", core_views.gracias, name="gracias"),
+]
