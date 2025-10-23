@@ -15,8 +15,7 @@ def qr_gracias(request):
 
 def qr_i(request):
     """
-    Devuelve el JSON que usa el QR para combos (coberturas, médicos, sectores).
-    Lee core/static/qr/i.json si existe; si no, responde estructura vacía.
+    JSON de combos para el QR: lee core/static/qr/i.json; si no existe, devuelve estructura vacía.
     """
     path = Path(settings.BASE_DIR) / "core" / "static" / "qr" / "i.json"
     if path.exists():
