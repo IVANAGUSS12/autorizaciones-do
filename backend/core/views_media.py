@@ -1,8 +1,9 @@
-
 import os
 from urllib.parse import unquote
 from django.http import HttpResponseRedirect, Http404, FileResponse
 from django.core.files.storage import default_storage
+from django.conf import settings
+from .models import Attachment
 
 def _bucket():
     return (
@@ -48,9 +49,13 @@ def _try_presign(client, bucket, key):
         return None
 
 def media_signed_view(request, key: str):
+    """
+    Recibe una 'key' (p. ej. 'patients/6/archivo.pdf'), maneja espacios/acentos
+    y prueba las variantes más comunes, firmando si el bucket es privado.
+    """
     original = unquote(key)
 
-    # Probar variaciones comunes (con/sin 'media/' y leading slash)
+    # Probar variantes: con/sin 'media/' y con/sin leading slash
     candidates = [original]
     if original.startswith("/"):
         candidates.append(original.lstrip("/"))
@@ -61,12 +66,15 @@ def media_signed_view(request, key: str):
 
     bucket = _bucket()
     client = _client()
+
+    # 1) Firma presignada (privado)
     if client and bucket:
         for k in candidates:
             url = _try_presign(client, bucket, k)
             if url:
                 return HttpResponseRedirect(url)
 
+    # 2) URL del storage (si el backend la provee)
     for k in candidates:
         try:
             url = default_storage.url(k)
@@ -75,12 +83,55 @@ def media_signed_view(request, key: str):
         except Exception:
             pass
 
+    # 3) URL directa a Spaces (si el bucket es público)
+    ep = _endpoint()
+    if ep and bucket:
+        # redirigimos igual; el CDN responderá 200/403/404
+        for k in candidates:
+            direct = f"{ep.rstrip('/')}/{bucket}/{k.lstrip('/')}"
+            return HttpResponseRedirect(direct)
+
+    # 4) Último recurso: servir desde disco local (FileSystemStorage)
     for k in candidates:
+        # default_storage.path(...) puede no existir según backend; probamos ambos
         try:
             path = default_storage.path(k)
             return FileResponse(open(path, "rb"))
         except Exception:
             pass
+        local = os.path.join(str(getattr(settings, "MEDIA_ROOT", "/app/media")), k)
+        if os.path.exists(local):
+            return FileResponse(open(local, "rb"))
 
     raise Http404("The requested resource was not found on this server.")
 
+def patient_file_redirect(request, patient_id: int, filename: str):
+    """
+    Compatibilidad para URLs antiguas del panel:
+      /patients/<id>/<filename>.pdf
+    Busca un Attachment del paciente cuyo 'name' coincida o cuyo 'file.name'
+    termine con ese filename y redirige a /v1/media-signed/<key>.
+    """
+    target = unquote(filename)
+
+    # 1) intentá por 'name' exacto
+    try:
+        att = Attachment.objects.filter(patient_id=patient_id, name=target).order_by("-created_at").first()
+        if att and getattr(att, "file", None):
+            return HttpResponseRedirect(f"/v1/media-signed/{att.file.name}")
+    except Exception:
+        pass
+
+    # 2) intentá por sufijo del file.name
+    try:
+        for att in Attachment.objects.filter(patient_id=patient_id).order_by("-created_at"):
+            f = getattr(att, "file", None)
+            if not f:
+                continue
+            base = os.path.basename(f.name)
+            if base == target or f.name.endswith(target):
+                return HttpResponseRedirect(f"/v1/media-signed/{f.name}")
+    except Exception:
+        pass
+
+    raise Http404("Attachment no encontrado para ese paciente/nombre.")
