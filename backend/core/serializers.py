@@ -1,16 +1,17 @@
 from rest_framework import serializers
 from .models import Patient, Attachment
 
-
 class PatientSerializer(serializers.ModelSerializer):
     class Meta:
         model = Patient
         fields = "__all__"
         read_only_fields = ["id", "created_at", "updated_at"]
 
-
 class AttachmentSerializer(serializers.ModelSerializer):
-    # devolvemos solo key; url = None para evitar tocar storage.url (evita 500)
+    """
+    Evitamos exponer file.url (que a veces dispara excepción con storage S3/Spaces).
+    Subimos el archivo con 'file' (write_only) y devolvemos 'key' para usar con /v1/media-signed/<key>.
+    """
     url = serializers.SerializerMethodField()
     key = serializers.SerializerMethodField()
 
@@ -21,22 +22,23 @@ class AttachmentSerializer(serializers.ModelSerializer):
             "patient",
             "kind",
             "name",
-            "file",
-            "url",
-            "key",
+            "file",       # queda para escritura
+            "url",        # siempre None (no resolvemos .url)
+            "key",        # ruta/clave dentro del bucket
             "created_at",
         ]
         read_only_fields = ["id", "url", "key", "created_at"]
+        extra_kwargs = {
+            "file": {"write_only": True}
+        }
 
     def get_url(self, obj):
-        # No usamos obj.file.url (si el bucket es privado puede tirar excepción)
+        # Nunca intentamos resolver storage.url acá
         return None
 
     def get_key(self, obj):
-        try:
-            f = getattr(obj, "file", None)
-            if not f:
-                return None
-            return f.name  # p.ej. 'attachments/3/orden_123.pdf'
-        except Exception:
+        f = getattr(obj, "file", None)
+        if not f:
             return None
+        # Devuelve la ruta tal cual quedó en el storage (p.ej. 'patients/123/orden.pdf')
+        return getattr(f, "name", None)
