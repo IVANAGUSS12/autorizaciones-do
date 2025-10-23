@@ -1,10 +1,12 @@
-from django.urls import path
-from .views import health_check
+from django.urls import path, include
+from rest_framework.routers import DefaultRouter
+from .views import PatientViewSet, AttachmentViewSet, health
 
-# OJO: mantené aquí todas tus rutas actuales (patients, attachments, media-signed, etc.)
-# Debajo agregamos health/ para que /v1/health/ exista también desde core si lo preferís así.
+router = DefaultRouter()
+router.register(r'patients', PatientViewSet)
+router.register(r'attachments', AttachmentViewSet)
 
 urlpatterns = [
-    path("health/", health_check, name="health_check_core"),
-    # ... (tus rutas existentes) ...
+    path('v1/', include(router.urls)),
+    path('v1/health/', health, name='health'),  # ✅ health check
 ]
