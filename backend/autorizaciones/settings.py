@@ -17,14 +17,14 @@ INSTALLED_APPS = [
     "django.contrib.messages",
     "django.contrib.staticfiles",
     "rest_framework",
-    "storages",      # django-storages (Spaces)
+    "storages",
     "core",
 ]
 
 # --- Middleware (WhiteNoise inmediatamente después de Security) ---
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
-    "whitenoise.middleware.WhiteNoiseMiddleware",  # <- importante que vaya arriba
+    "whitenoise.middleware.WhiteNoiseMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
@@ -38,7 +38,7 @@ ROOT_URLCONF = "autorizaciones.urls"
 TEMPLATES = [
     {
         "BACKEND": "django.template.backends.django.DjangoTemplates",
-        "DIRS": [BASE_DIR / "templates"],
+        "DIRS": [BASE_DIR / "templates", BASE_DIR / "core" / "templates"],
         "APP_DIRS": True,
         "OPTIONS": {
             "context_processors": [
@@ -58,11 +58,7 @@ DATABASE_URL = os.getenv("DATABASE_URL", "")
 if DATABASE_URL:
     import dj_database_url
     DATABASES = {
-        "default": dj_database_url.parse(
-            DATABASE_URL,
-            conn_max_age=600,
-            ssl_require=os.getenv("DB_SSL_REQUIRE", "1") == "1",
-        )
+        "default": dj_database_url.parse(DATABASE_URL, conn_max_age=600, ssl_require=False)
     }
 else:
     DATABASES = {
@@ -81,29 +77,29 @@ USE_TZ = True
 # --- Static / WhiteNoise ---
 STATIC_URL = "/static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
-STATICFILES_STORAGE = "whitenoise.storage.CompressedManifestStaticFilesStorage"
 
-# 👇 Forzamos a que se copien tus HTML de core/static/** a staticfiles/
-STATICFILES_DIRS = [BASE_DIR / "core" / "static"]
+_core_static = BASE_DIR / "core" / "static"
+STATICFILES_DIRS = [_core_static] if _core_static.exists() else []
+
+STATICFILES_STORAGE = "whitenoise.storage.CompressedManifestStaticFilesStorage"
 
 # --- Media en DigitalOcean Spaces ---
 DEFAULT_FILE_STORAGE = "storages.backends.s3boto3.S3Boto3Storage"
 
 AWS_S3_REGION_NAME = os.getenv("SPACES_REGION", "sfo3")
 AWS_S3_ENDPOINT_URL = os.getenv("SPACES_ENDPOINT", "https://sfo3.digitaloceanspaces.com")
-AWS_STORAGE_BUCKET_NAME = os.getenv("SPACES_NAME")  # nombre EXACTO del bucket
+AWS_STORAGE_BUCKET_NAME = os.getenv("SPACES_NAME")
 
 AWS_S3_ADDRESSING_STYLE = "virtual"
 AWS_S3_SIGNATURE_VERSION = "s3v4"
 
-# Bucket privado + URLs firmadas (recomendado)
 AWS_DEFAULT_ACL = None
 AWS_QUERYSTRING_AUTH = True
 
 # --- Seguridad detrás del proxy de DO ---
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 SECURE_SSL_REDIRECT = os.getenv("SECURE_SSL_REDIRECT", "1") == "1"
-SECURE_REDIRECT_EXEMPT = [r"^v1/health/?$"]  # para que el health de DO no redirija a https
+SECURE_REDIRECT_EXEMPT = [r"^v1/health/?$"]
 
 CSRF_TRUSTED_ORIGINS = [
     "https://*.ondigitalocean.app",
@@ -113,11 +109,11 @@ CSRF_TRUSTED_ORIGINS = [
 # --- DRF ---
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": [
-        "rest_framework.authentication.SessionAuthentication",
         "rest_framework.authentication.BasicAuthentication",
+        # No SessionAuthentication para evitar CSRF en QR
     ],
     "DEFAULT_PERMISSION_CLASSES": [
-        "rest_framework.permissions.IsAuthenticatedOrReadOnly",
+        "rest_framework.permissions.AllowAny",
     ],
 }
 
