@@ -1,3 +1,4 @@
+
 from django.shortcuts import render
 
 def panel_index(request):
@@ -5,3 +6,6 @@ def panel_index(request):
 
 def qr_index(request):
     return render(request, "qr.html")
+
+def qr_gracias(request):
+    return render(request, "gracias.html")
