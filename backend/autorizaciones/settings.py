@@ -1,4 +1,3 @@
-
 from pathlib import Path
 import os
 from urllib.parse import urlparse, parse_qs
@@ -18,6 +17,8 @@ INSTALLED_APPS = [
     "django.contrib.messages",
     "django.contrib.staticfiles",
     "rest_framework",
+    # Storage a Spaces
+    "storages",
     "core",
 ]
 
@@ -67,7 +68,6 @@ def db_from_url(url: str):
         "HOST": parsed.hostname or os.getenv("DB_HOST", ""),
         "PORT": str(parsed.port or os.getenv("DB_PORT", "5432")),
         "OPTIONS": {
-            # Honor sslmode if provided
             **({"sslmode": qs.get("sslmode", [""])[0]} if qs.get("sslmode") else {})
         },
     }
@@ -77,7 +77,6 @@ if DATABASE_URL:
     try:
         DATABASES = {"default": db_from_url(DATABASE_URL)}
     except Exception:
-        # Fallback to discrete envs if parsing fails
         DATABASES = {
             "default": {
                 "ENGINE": "django.db.backends.postgresql",
@@ -89,14 +88,13 @@ if DATABASE_URL:
             }
         }
 else:
-    # Explicit envs (DO Managed DB: set DB_HOST to the managed host, not localhost)
     DATABASES = {
         "default": {
             "ENGINE": "django.db.backends.postgresql",
             "NAME": os.getenv("DB_NAME", "autorizaciones"),
             "USER": os.getenv("DB_USER", "postgres"),
             "PASSWORD": os.getenv("DB_PASSWORD", ""),
-            "HOST": os.getenv("DB_HOST", ""),  # e.g. db-postgresql-xxxx.do-user-xxxx.c.db.ondigitalocean.com
+            "HOST": os.getenv("DB_HOST", ""),
             "PORT": os.getenv("DB_PORT", "5432"),
         }
     }
@@ -125,8 +123,30 @@ STATICFILES_DIRS = [_core_static] if _core_static.exists() else []
 
 STATICFILES_STORAGE = "whitenoise.storage.CompressedManifestStaticFilesStorage"
 
-# --- Files ---
-DEFAULT_FILE_STORAGE = os.getenv("DEFAULT_FILE_STORAGE", "django.core.files.storage.FileSystemStorage")
+# --- Media en DigitalOcean Spaces (django-storages + boto3) ---
+AWS_ACCESS_KEY_ID = os.getenv("SPACES_KEY")
+AWS_SECRET_ACCESS_KEY = os.getenv("SPACES_SECRET")
+AWS_S3_REGION_NAME = os.getenv("SPACES_REGION", "sfo3")
+AWS_S3_ENDPOINT_URL = os.getenv("SPACES_ENDPOINT", f"https://{AWS_S3_REGION_NAME}.digitaloceanspaces.com")
+AWS_STORAGE_BUCKET_NAME = os.getenv("SPACES_NAME")  # p.ej. 'autorizaciones-media'
+
+# Recomendados para DO Spaces
+AWS_S3_SIGNATURE_VERSION = "s3v4"
+AWS_S3_ADDRESSING_STYLE = "virtual"   # 'virtual' o 'auto'
+AWS_DEFAULT_ACL = None
+AWS_QUERYSTRING_AUTH = True           # URLs firmadas por defecto
+AWS_S3_FILE_OVERWRITE = False         # no sobreescribir archivos con el mismo nombre
+
+# Django >= 4.2: usar STORAGES
+STORAGES = {
+    "default": {"BACKEND": "storages.backends.s3boto3.S3Boto3Storage"},
+    # Si querés también los estáticos en Spaces, podés definir "staticfiles" aquí.
+}
+
+# Si algún código viejo guarda directo en disco, mantenemos MEDIA_ROOT para evitar errores
+MEDIA_ROOT = os.getenv("MEDIA_ROOT", "/app/media")
+# Si querés forzar un dominio público/CDN (bucket público), podés setear:
+# MEDIA_URL = f"https://{AWS_STORAGE_BUCKET_NAME}.{AWS_S3_REGION_NAME}.digitaloceanspaces.com/"
 
 # --- Misc ---
 LANGUAGE_CODE = "es-ar"
