@@ -108,9 +108,9 @@ CSRF_TRUSTED_ORIGINS = [
 
 # --- DRF ---
 REST_FRAMEWORK = {
+    # No usamos SessionAuthentication → no hay CSRF.
     "DEFAULT_AUTHENTICATION_CLASSES": [
         "rest_framework.authentication.BasicAuthentication",
-        # No SessionAuthentication para evitar CSRF en QR
     ],
     "DEFAULT_PERMISSION_CLASSES": [
         "rest_framework.permissions.AllowAny",
