@@ -1,14 +1,18 @@
+from django.utils.decorators import method_decorator
+from django.views.decorators.csrf import csrf_exempt
 from rest_framework import viewsets, permissions
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
 from .models import Patient, Attachment
 from .serializers import PatientSerializer, AttachmentSerializer
 
+@method_decorator(csrf_exempt, name="dispatch")
 class PatientViewSet(viewsets.ModelViewSet):
     queryset = Patient.objects.all().order_by("-created_at")
     serializer_class = PatientSerializer
     permission_classes = [permissions.AllowAny]
 
+@method_decorator(csrf_exempt, name="dispatch")
 class AttachmentViewSet(viewsets.ModelViewSet):
     queryset = Attachment.objects.all().order_by("-created_at")
     serializer_class = AttachmentSerializer
