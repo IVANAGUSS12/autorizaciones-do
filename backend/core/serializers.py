@@ -1,30 +1,28 @@
-
 from rest_framework import serializers
+from django.core.files.storage import default_storage
 from .models import Patient, Attachment
 
 class PatientSerializer(serializers.ModelSerializer):
     class Meta:
         model = Patient
-        fields = "__all__"
-        read_only_fields = ["id", "created_at", "updated_at"]
+        fields = [
+            "id", "nombre", "dni", "email", "telefono", "cobertura", "medico",
+            "observaciones", "fecha_cx", "sector_code", "estado", "created_at",
+        ]
 
 class AttachmentSerializer(serializers.ModelSerializer):
     url = serializers.SerializerMethodField()
-    key = serializers.SerializerMethodField()
 
     class Meta:
         model = Attachment
-        fields = [
-            "id", "patient", "kind", "name",
-            "file",    # write-only
-            "url", "key", "created_at",
-        ]
-        read_only_fields = ["id", "url", "key", "created_at"]
-        extra_kwargs = {"file": {"write_only": True}}
+        fields = ["id", "patient", "kind", "name", "url", "key", "created_at"]
 
     def get_url(self, obj):
-        return None
-
-    def get_key(self, obj):
-        f = getattr(obj, "file", None)
-        return getattr(f, "name", None) if f else None
+        # Construye URL firmada/publica a partir de obj.key via storage
+        key = getattr(obj, "key", None) or getattr(getattr(obj, "file", None), "name", None)
+        if not key:
+            return None
+        try:
+            return default_storage.url(key)
+        except Exception:
+            return None
