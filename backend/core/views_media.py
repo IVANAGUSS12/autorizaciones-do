@@ -2,7 +2,6 @@ import os
 from urllib.parse import quote
 from django.http import HttpResponseRedirect, Http404, FileResponse
 from django.core.files.storage import default_storage
-from django.conf import settings
 
 def _boto3_client_or_none():
     try:
@@ -29,28 +28,22 @@ def _boto3_client_or_none():
     )
 
 def media_signed_view(request, key: str):
-    """
-    GET /v1/media-signed/<path:key>
-    - Si hay credenciales de Spaces, genera un presigned URL con expiración corta.
-    - Si no, intenta default_storage.url(key).
-    - En entorno local con FileSystemStorage, devuelve el archivo directo si existe.
-    """
-    # 1) Intento firmar con Spaces/S3
-    bucket = os.getenv("SPACES_BUCKET") or os.getenv("AWS_STORAGE_BUCKET_NAME")
+    bucket = (os.getenv("SPACES_NAME") or
+              os.getenv("SPACES_BUCKET") or
+              os.getenv("AWS_STORAGE_BUCKET_NAME"))
     client = _boto3_client_or_none()
     if client and bucket:
         try:
             url = client.generate_presigned_url(
                 ClientMethod="get_object",
                 Params={"Bucket": bucket, "Key": key},
-                ExpiresIn=300,  # 5 minutos
+                ExpiresIn=300,
                 HttpMethod="GET",
             )
             return HttpResponseRedirect(url)
         except Exception:
-            pass  # probamos siguientes caminos
+            pass
 
-    # 2) Intento url del storage (si es público o configurado)
     try:
         url = default_storage.url(key)
         if url:
@@ -58,10 +51,8 @@ def media_signed_view(request, key: str):
     except Exception:
         pass
 
-    # 3) Entorno local: tratamos de abrir el archivo físico
     try:
-        # default_storage.path(key) sólo existe en FileSystemStorage
-        path = default_storage.path(key)
+        path = default_storage.path(key)  # FileSystemStorage only
         return FileResponse(open(path, "rb"))
     except Exception:
         raise Http404(f"No se pudo resolver el recurso solicitado: {quote(key)}")
