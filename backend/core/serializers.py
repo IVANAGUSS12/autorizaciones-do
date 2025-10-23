@@ -13,8 +13,17 @@ class AttachmentSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Attachment
-        fields = ["id","patient","kind","name","file","url","key","created_at"]
-        read_only_fields = ["id","url","key","created_at"]
+        fields = [
+            "id",
+            "patient",
+            "kind",
+            "name",
+            "file",      # write-only
+            "url",
+            "key",
+            "created_at",
+        ]
+        read_only_fields = ["id", "url", "key", "created_at"]
         extra_kwargs = {"file": {"write_only": True}}
 
     def get_url(self, obj):
@@ -22,6 +31,5 @@ class AttachmentSerializer(serializers.ModelSerializer):
 
     def get_key(self, obj):
         f = getattr(obj, "file", None)
-        if not f:
-            return None
-        return getattr(f, "name", None)
+        return getattr(f, "name", None) if f else None
+
