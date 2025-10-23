@@ -1,3 +1,4 @@
+
 from django.contrib import admin
 from django.utils.html import format_html
 from django import forms
@@ -60,7 +61,6 @@ class AttachmentAdmin(admin.ModelAdmin):
         key = getattr(f, "name", None) if f else None
         if not key:
             return "—"
-        # dejamos que el browser encodee; el view hará unquote al recibirla
-        url = f"/v1/media-signed/{key}"
+        url = f"/v1/media-signed/{key}"   # manejamos espacios/utf-8 en el view
         return format_html('<a href="{}" target="_blank" rel="noopener">Abrir/Descargar</a>', url)
     media_link.short_description = "Archivo"
