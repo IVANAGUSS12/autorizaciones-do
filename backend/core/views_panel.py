@@ -1,18 +1,18 @@
-from django.http import Http404, HttpResponse
-from django.contrib.staticfiles.storage import staticfiles_storage
+from django.http import FileResponse, Http404
+from django.conf import settings
+from pathlib import Path
 
-def _serve(path: str):
-    try:
-        with staticfiles_storage.open(path) as f:
-            data = f.read()
-    except Exception:
-        raise Http404(path)
-    return HttpResponse(data, content_type="text/html; charset=utf-8")
+def _safe_file_response(path: Path):
+    if not path.exists() or not path.is_file():
+        raise Http404("Archivo no encontrado.")
+    # FileResponse ya pone Content-Type text/html por extensión (según servidor);
+    # si quisieras forzar: FileResponse(..., content_type="text/html")
+    return FileResponse(open(path, "rb"))
 
 def panel_index(request):
-    # sirve static/panel/index.html
-    return _serve("panel/index.html")
+    html_path = Path(settings.BASE_DIR) / "core" / "static" / "panel" / "index.html"
+    return _safe_file_response(html_path)
 
 def qr_index(request):
-    # sirve static/qr/index.html
-    return _serve("qr/index.html")
+    html_path = Path(settings.BASE_DIR) / "core" / "static" / "qr" / "index.html"
+    return _safe_file_response(html_path)
