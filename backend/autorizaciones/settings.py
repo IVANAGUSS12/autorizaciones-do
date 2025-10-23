@@ -30,7 +30,9 @@ MIDDLEWARE = [
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
 
-ROOT_URLCONF = "backend.urls"
+# ✅ correcto para tu proyecto
+ROOT_URLCONF = "autorizaciones.urls"
+WSGI_APPLICATION = "autorizaciones.wsgi.application"
 
 TEMPLATES = [
     {
